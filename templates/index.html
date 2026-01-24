@@ -175,6 +175,15 @@
         }
         .btn-play:hover { filter: brightness(1.1); box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
 
+        /* 追加: 小さなボタン用スタイル */
+        .btn-mini {
+            padding: 0;
+            width: 28px;
+            height: 28px;
+            font-size: 0.7rem;
+            border-radius: 4px;
+        }
+
         .input-turn {
             background: transparent;
             border: none;
@@ -327,6 +336,14 @@
             gap: 1rem;
         }
         .interest-label { font-size: 0.9rem; font-weight: 500; color: var(--text-muted); display: flex; gap: 6px; align-items: center; }
+        
+        /* 追加: 入力欄とボタンのラッパー */
+        .interest-controls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
         .interest-field {
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid var(--border-color);
@@ -610,11 +627,21 @@
                                 <i class="fas fa-percentage"></i> Interest Rate
                                 <span style="color: white; font-family: 'JetBrains Mono'; margin-left: 5px;">{{ "%.2f"|format(country.interest_rate) }}%</span>
                             </div>
-                            <input type="text" 
-                                   name="interest_{{ country.money_name }}_{{ country.name }}" 
-                                   class="interest-field" 
-                                   placeholder="New %"
-                                   autocomplete="off">
+                            <div class="interest-controls">
+                                <button type="button" class="btn btn-glass btn-mini" onclick="adjustInterest(this, -0.25)">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                                <input type="text" 
+                                       name="interest_{{ country.money_name }}_{{ country.name }}" 
+                                       class="interest-field" 
+                                       placeholder="New %"
+                                       autocomplete="off"
+                                       data-current-rate="{{ country.interest_rate }}"
+                                       style="text-align: center;">
+                                <button type="button" class="btn btn-glass btn-mini" onclick="adjustInterest(this, 0.25)">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
                         </div>
 
                         <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
@@ -671,7 +698,7 @@
             document.getElementById('loader').style.display = 'flex';
         }
 
-        // --- Toggle View Logic (Added) ---
+        // --- Toggle View Logic ---
         document.addEventListener('DOMContentLoaded', () => {
             const toggleBtn = document.getElementById('toggleViewBtn');
             const icon = toggleBtn.querySelector('i');
@@ -698,10 +725,6 @@
                         const isSelfOp = card.dataset.selfop === 'true';
                         const isBase = card.dataset.base === 'true';
                         
-                        // Condition: Show if NOT self-op OR is Base currency
-                        // "Show only countries where selfoperation=False and base_currency=True countries"
-                        // Interpretation: Union of (Non-SelfOp) and (BaseCurrency)
-                        
                         if (!isSelfOp || isBase) {
                             card.style.display = 'flex'; // Default display for card
                         } else {
@@ -727,6 +750,30 @@
                 }
             }
         });
+
+        // --- Interest Adjustment Logic (Added) ---
+        function adjustInterest(btn, delta) {
+            // ボタンの親要素(.interest-controls)からinput要素を探す
+            const wrapper = btn.closest('.interest-controls');
+            const input = wrapper.querySelector('input');
+            
+            // 現在の値をパース
+            let val = parseFloat(input.value);
+            
+            // 入力が空の場合は、data属性に保存した現在の金利を基準にする
+            if (isNaN(val)) {
+                val = parseFloat(input.dataset.currentRate);
+            }
+            
+            // 加算・減算
+            val += delta;
+            
+            // 浮動小数点の誤差対策（例: 3.50000000004 などを防ぐ）
+            val = Math.round(val * 100) / 100;
+            
+            // 値をセット (小数点第2位まで)
+            input.value = val.toFixed(2);
+        }
 
         // --- Chart.js Setup ---
         // Apply theme colors to charts
