@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<head>
+    <title>World Simulation - Failure</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f9f9f9;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            color: #e74c3c;
+            margin-bottom: 30px;
+        }
+        .message {
+            font-size: 18px;
+            color: #2c3e50;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Simulation Failed</h1>
+    <p class="message">The simulation has encountered an error and cannot continue.</p>
+    <p>Please try again later or contact support if the issue persists.</p>
+    <a href="{{ url_for('index') }}">Return to Home</a>

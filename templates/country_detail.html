@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ country.name }} Details</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #1a202c;
+            --card-bg-color: #2d3748;
+            --text-color: #e2e8f0;
+            --text-muted-color: #a0aec0;
+            --border-color: #4a5568;
+            --primary-color: #2b6cb0;
+            --primary-hover-color: #2c5282;
+            --accent-color: #e67e22;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        header h1 {
+            font-size: 2.8rem;
+            font-weight: 700;
+            color: white;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        header h1 i {
+            color: var(--accent-color);
+        }
+
+        .btn-back {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background-color: var(--primary-color);
+            color: white;
+        }
+        .btn-back:hover {
+            background-color: var(--primary-hover-color);
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background-color: var(--card-bg-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .card h2 {
+            margin-top: 0;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: white;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .chart-card {
+            height: 400px;
+        }
+        .chart-card canvas {
+            cursor: pointer; /* Add pointer cursor to indicate clickable */
+        }
+
+        .table-card .table-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .table-container::-webkit-scrollbar { width: 8px; }
+        .table-container::-webkit-scrollbar-track { background: var(--bg-color); }
+        .table-container::-webkit-scrollbar-thumb {
+            background-color: var(--border-color);
+            border-radius: 10px;
+            border: 2px solid var(--bg-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: #374151;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        tr { transition: background-color 0.2s ease; }
+        tr:not(:first-child):hover { background-color: #4a5568; }
+        td:first-child, th:first-child { text-align: center; }
+        td:not(:first-child), th:not(:first-child) { text-align: right; }
+
+        .pill-change {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+            display: inline-block;
+        }
+        .pill-positive { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .pill-negative { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: var(--card-bg-color);
+            margin: auto;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            width: 80%;
+            max-width: 1200px;
+            height: 80vh;
+            border-radius: 12px;
+            position: relative;
+        }
+        .close-button {
+            color: #aaa;
+            position: absolute;
+            top: 15px;
+            right: 25px;
+            font-size: 28px;
+            font-weight: bold;
+            transition: color 0.3s ease;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: white;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        /* Comparison Checkbox Styles */
+        .comparison-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            background: rgba(255,255,255,0.05);
+            padding: 8px 12px;
+            border-radius: 6px;
+            transition: background 0.2s, transform 0.1s;
+            border: 1px solid transparent;
+        }
+        .comparison-label:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .comparison-label input:checked + span {
+            color: var(--text-accent);
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div id="chartModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <canvas id="enlargedChartCanvas"></canvas>
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-flag"></i> {{ country.name }} Details</h1>
+            <div>
+                <button id="toggleHistoryBtn" class="btn-back" style="background-color: var(--accent-color); margin-right: 1rem;">
+                    <i class="fas fa-history"></i> Last 100 Turns
+                </button>
+                <a href="{{ url_for('index') }}" class="btn-back">
+                    <i class="fas fa-arrow-left"></i> Back to World
+                </a>
+            </div>
+        </header>
+
+        <div class="card" style="margin-bottom: 2rem; border-left: 4px solid var(--accent-color);">
+            <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--text-color); margin-bottom: 1rem; font-weight: 600;">
+                <i class="fas fa-balance-scale" style="margin-right: 8px;"></i> Compare with Countries (USD GDP, Per Capita, Industry)
+            </h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.8rem;">
+                {% for c_name in all_countries_data.keys()|sort %}
+                    {% if c_name != country.name %}
+                    <label class="comparison-label">
+                        <input type="checkbox" onchange="toggleCountryComparison(this, '{{ c_name }}')" style="accent-color: var(--accent-color);">
+                        <span style="font-size: 0.9rem;">{{ c_name }}</span>
+                    </label>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="card table-card" style="grid-column: span 2;">
+                <h2><i class="fas fa-clipboard-list"></i> Policy & Event Log</h2>
+                <div class="table-container" style="max-height: 300px;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 80px;">Turn</th>
+                                <th style="width: 150px;">Type</th>
+                                <th style="text-align: left;">Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventLogBody">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card chart-card"><h2><i class="fas fa-globe"></i> Currency Index (Base=100 at T{{ index_base_turn }})</h2><canvas id="currencyIndexChart"></canvas></div>
+
+            <div class="card chart-card"><h2><i class="fas fa-chart-bar"></i> Population by Age</h2><canvas id="populationChart"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-history"></i> Population History</h2><canvas id="populationHistoryChart"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Income by Age</h2><canvas id="incomeChart"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Exchange Rate History (vs USD)</h2><canvas id="exchangeRateChart"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> GDP History ({{ country.money_name }})</h2><canvas id="gdpChart"></canvas></div>
+            
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Real GDP History ({{ country.money_name }}, Base=Turn 0)</h2><canvas id="realGdpChart"></canvas></div>
+
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> GDP History (USD)</h2><canvas id="usdgdpChart"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> GDP Per Capita History (USD)</h2><canvas id="gdpPerCapitaUsdChart"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-exchange-alt"></i> Rate & Interest Diff Correlation</h2><canvas id="rateDiffCorrelationChart"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Real Interest Diff (vs {{ base_country_name }})</h2><canvas id="realInterestDiffChart"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Price Inflation Rate</h2><canvas id="priceChart"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Industry Histrory</h2><canvas id="industryData"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-balance-scale"></i> Net Debt / GDP Ratio</h2><canvas id="debtChart"></canvas></div>
+
+            <div class="card table-card">
+                <h2><i class="fas fa-exchange-alt"></i> Exchange Rates (vs {{ country.money_name }})</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="text-align: left;">Currency</th>
+                                <th>Rate (1 Other Currency = X {{ country.money_name }})</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for currency_name, rate in mp.items() %}
+                            <tr>
+                                <td style="text-align: left;">{{ currency_name }}</td>
+                                <td>{{ "%.4f"|format(rate) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card table-card">
+                <h2><i class="fas fa-users"></i> Population Breakdown</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Age</th>
+                                <th>Population</th>
+                                <th>Satisfaction</th>
+                                <th>Income</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set age_labels = [] %}
+                            {% set population_counts = [] %}
+                            {% set income_levels = [] %}
+                            {% for i in range(100) %}
+                            <tr>
+                                <td>{{ i }}</td>
+                                <td>{{ country.population[i][0] }}</td>
+                                <td>{{ "%.2f"|format(country.population[i][1].get_satisfaction()) }}</td>
+                                <td>{{ "%.2f"|format(country.population[i][2].get_salary()) }}</td>
+                            </tr>
+                            {% set _ = age_labels.append(i) %}
+                            {% set _ = population_counts.append(country.population[i][0]) %}
+                            {% set _ = income_levels.append(country.population[i][2].get_salary()) %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ★追加: 比較機能用のデータと変数
+        const allCountriesData = {{ all_countries_data|tojson }};
+        const comparisonColors = [
+            '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', 
+            '#8B5CF6', '#EC4899', '#F472B6', '#FCA5A5', '#FCD34D',
+            '#6EE7B7', '#93C5FD', '#A5B4FC', '#C4B5FD', '#F9A8D4',
+            '#D946EF', '#84CC16', '#06B6D4', '#EAB308', '#F97316'
+        ];
+        const activeComparisons = new Set();
+
+        const ageLabels = {{ age_labels|tojson }};
+        const populationData = {{ population_counts|tojson }};
+        const incomeData = {{ income_levels|tojson }};
+        const gdpValues = {{ country.past_gdp|tojson }};
+        const priceValues = {{ country.price.past_price|tojson }};
+        const usdGdpValues = {{ country.past_gdp_usd|tojson }};
+        const gdpLabels = Array.from({length: gdpValues.length}, (_, i) => `Turn ${i + 1}`);
+        const exchangeRateValues = {{ money.get_past_rate()|tojson }};
+        const exchangeRateLabels = Array.from({length: exchangeRateValues.length}, (_, i) => `Turn ${i}`);
+        const industryData = {{ country.industry.past_power|tojson }};
+        const realInterestDiffValues = {{ real_interest_diff_data|tojson }};
+        const pastPopulationData = {{ country.past_population|tojson }};
+        const eventLogs = {{ country.event_logs|tojson|default([]) }};
+        const currencyIndexValues = {{ money.past_indices|tojson }};
+
+        const domesticMoneyHistory = {{ country.past_domestic_money|tojson }};
+        const usdHistory = {{ country.past_usd|tojson }};
+        const isBaseCurrency = {{ 'true' if money.base_currency else 'false' }};
+        
+        // --- ★追加: 実質GDP (Real GDP) の計算 ---
+        const realGdpValues = [];
+        // 基準価格 (ターン0、またはデータが存在する最古の価格)
+        // ここでは past_price[0] を基準(=100)としてデフレーター計算する
+        const basePrice = priceValues.length > 0 ? priceValues[0] : 100.0;
+        
+        // データ長を安全に合わせる
+        const dataLen = Math.min(gdpValues.length, priceValues.length);
+        
+        for (let i = 0; i < dataLen; i++) {
+            const nominal = gdpValues[i];
+            const currentPrice = priceValues[i];
+            
+            if (basePrice > 0 && currentPrice > 0) {
+                // デフレーター = 現在の物価 / 基準物価
+                const deflator = currentPrice / basePrice;
+                // 実質GDP = 名目GDP / デフレーター
+                const realGdp = nominal / deflator;
+                realGdpValues.push(realGdp);
+            } else {
+                realGdpValues.push(0);
+            }
+        }
+        
+        // --- Debt Ratio 計算 ---
+        const debtRatioData = [];
+        const debtDataLen = Math.min(domesticMoneyHistory.length, usdHistory.length, gdpValues.length);
+        
+        for (let i = 0; i < debtDataLen; i++) {
+            let rate = 1.0;
+            if (!isBaseCurrency) {
+                if (i < exchangeRateValues.length) {
+                    rate = exchangeRateValues[i];
+                } else if (exchangeRateValues.length > 0) {
+                    rate = exchangeRateValues[exchangeRateValues.length - 1];
+                }
+            }
+            const domestic = domesticMoneyHistory[i];
+            const usd = usdHistory[i];
+            const gdp = gdpValues[i];
+            if (gdp !== 0) {
+                const debt = -(domestic + usd * rate);
+                const ratio = (debt / gdp) * 100; 
+                debtRatioData.push(ratio); 
+            } else {
+                debtRatioData.push(0);
+            }
+        }
+
+        const gdpPerCapitaUsdData = [];
+        const perCapitaLen = Math.min(usdGdpValues.length, pastPopulationData.length);
+        for(let i=0; i<perCapitaLen; i++){
+            const pop = pastPopulationData[i];
+            const gdp = usdGdpValues[i];
+            if(pop > 0) gdpPerCapitaUsdData.push(gdp / pop);
+            else gdpPerCapitaUsdData.push(0);
+        }
+        
+        const logBody = document.getElementById('eventLogBody');
+        if (logBody) {
+            const sortedLogs = [...eventLogs].sort((a, b) => b.turn - a.turn);
+            sortedLogs.forEach(log => {
+                const row = document.createElement('tr');
+                let badgeClass = 'pill-change';
+                if (log.type === 'Intervention') badgeClass += ' pill-negative';
+                else if (log.type === 'Fiscal Policy' || log.type === 'Tax Change') badgeClass += ' pill-positive';
+                
+                row.innerHTML = `
+                    <td style="text-align: center; font-family: 'JetBrains Mono';">${log.turn}</td>
+                    <td><span class="${badgeClass}">${log.type}</span></td>
+                    <td style="text-align: left;">${log.message}</td>
+                `;
+                logBody.appendChild(row);
+            });
+            if (sortedLogs.length === 0) {
+                logBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-muted-color); padding: 2rem;">No events recorded yet.</td></tr>';
+            }
+        }
+
+        const allInterventionPoints = eventLogs
+            .filter(e => e.type === 'Intervention')
+            .map(e => ({
+                x: `Turn ${e.turn}`,
+                y: exchangeRateValues[e.turn] || exchangeRateValues[exchangeRateValues.length-1],
+                description: e.message
+            }));
+
+        const allPolicyPoints = eventLogs
+            .filter(e => e.type === 'Fiscal Policy' || e.type === 'Tax Change')
+            .map(e => ({
+                x: `Turn ${e.turn}`,
+                y: gdpValues[e.turn] || gdpValues[gdpValues.length-1], 
+                description: e.message
+            }));
+
+        Chart.defaults.color = 'white';
+        Chart.defaults.borderColor = '#4a5568';
+
+        const chartColors = [
+            'rgba(43, 108, 176, 0.8)', 'rgba(230, 126, 34, 0.8)',
+            'rgba(46, 204, 113, 0.8)', 'rgba(142, 68, 173, 0.8)',
+            'rgba(52, 152, 219, 0.8)', 'rgba(241, 196, 15, 0.8)',
+            'rgba(231, 76, 60, 0.8)'
+        ];
+
+        const lineChartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: false, grid: { color: 'rgba(255, 255, 255, 0.1)' } },
+                x: { grid: { display: false } }
+            },
+            plugins: {
+                legend: { display: true, position: 'top' },
+                tooltip: { 
+                    backgroundColor: 'rgba(0,0,0,0.8)', 
+                    titleFont: { size: 14, weight: 'bold' },
+                    bodyFont: { size: 12 }
+                }
+            }
+        };
+
+        const barChartOptions = {
+            ...lineChartOptions,
+            scales: {
+                ...lineChartOptions.scales,
+                y: { ...lineChartOptions.scales.y, beginAtZero: true }
+            }
+        };
+        
+        const chartInstances = {};
+
+        chartInstances.currencyIndexChart = new Chart(document.getElementById("currencyIndexChart"), {
+            type: 'line',
+            data: { 
+                labels: gdpLabels.slice(0, currencyIndexValues.length), 
+                datasets: [{ 
+                    label: 'Currency Index (100 = Base at T{{ index_base_turn }})', 
+                    data: currencyIndexValues, 
+                    borderColor: '#8b5cf6', 
+                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                    fill: true,
+                    tension: 0.1, 
+                    pointRadius: 0 
+                }] 
+            },
+            options: { 
+                ...lineChartOptions,
+                scales: {
+                    ...lineChartOptions.scales,
+                    y: { 
+                        display: true,
+                        title: { display: true, text: 'Index Value' }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        chartInstances.populationChart = new Chart(document.getElementById("populationChart"), {
+            type: 'bar',
+            data: { labels: ageLabels, datasets: [{ label: 'Population', data: populationData, backgroundColor: chartColors[0] }] },
+            options: { ...barChartOptions, plugins: { legend: { display: false } } }
+        });
+
+        chartInstances.incomeChart = new Chart(document.getElementById("incomeChart"), {
+            type: 'line',
+            data: { labels: ageLabels, datasets: [{ label: 'Income', data: incomeData, borderColor: chartColors[1], tension: 0.1, pointRadius: 0 }] },
+            options: { ...lineChartOptions, plugins: { legend: { display: false } } }
+        });
+
+        const turnYear = {{ country.turn_year|tojson }};
+        const priceInflationData = [];
+        for (let i = turnYear; i < priceValues.length; i++) {
+            if (priceValues[i - turnYear] !== 0) {
+                const inflation = ((priceValues[i] - priceValues[i - turnYear]) / priceValues[i - turnYear]) * 100;
+                priceInflationData.push(inflation);
+            } else {
+                priceInflationData.push(0);
+            }
+        }
+        const inflationLabels = gdpLabels.slice(turnYear);
+
+        chartInstances.priceChart = new Chart(document.getElementById("priceChart"), {
+            type: 'line',
+            data: {
+                labels: inflationLabels,
+                datasets: [{
+                    label: `Price Inflation Rate (vs. ${turnYear} turns ago)`,
+                    data: priceInflationData,
+                    borderColor: chartColors[2],
+                    tension: 0.1,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                ...lineChartOptions,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) { label += ': '; }
+                                if (context.parsed.y !== null) { label += context.parsed.y.toFixed(2) + '%'; }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    ...lineChartOptions.scales,
+                    y: {
+                        ...lineChartOptions.scales.y,
+                        ticks: { callback: function(value) { return value.toFixed(1) + '%'; } }
+                    }
+                }
+            }
+        });
+
+        chartInstances.industryData = new Chart(document.getElementById("industryData"), {
+            type: 'line',
+            data: { labels: gdpLabels, datasets: [{ label: 'industryData', data: industryData, borderColor: chartColors[2], tension: 0.1, pointRadius: 0 }] },
+            options: { ...lineChartOptions, plugins: { legend: { display: false } } }
+        });
+
+        chartInstances.gdpChart = new Chart(document.getElementById("gdpChart"), {
+            type: 'line',
+            data: { 
+                labels: gdpLabels, 
+                datasets: [
+                    { label: 'GDP', data: gdpValues, borderColor: chartColors[3], tension: 0.1, pointRadius: 0 },
+                    {
+                        type: 'scatter',
+                        label: 'Policy Change',
+                        data: allPolicyPoints,
+                        backgroundColor: '#f59e0b',
+                        pointStyle: 'triangle',
+                        pointRadius: 8,
+                        pointHoverRadius: 10,
+                        order: 0
+                    }
+                ] 
+            },
+            options: { 
+                ...lineChartOptions, 
+                plugins: { 
+                    legend: { display: true },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                if (context.dataset.type === 'scatter') {
+                                    return context.raw.description;
+                                }
+                                return `${context.dataset.label}: ${context.parsed.y.toFixed(0)}`;
+                            }
+                        }
+                    } 
+                } 
+            }
+        });
+
+        // ★追加: 実質GDPチャート生成
+        chartInstances.realGdpChart = new Chart(document.getElementById("realGdpChart"), {
+            type: 'line',
+            data: { 
+                labels: gdpLabels.slice(0, realGdpValues.length), 
+                datasets: [{ 
+                    label: 'Real GDP (Base=Turn 0)', 
+                    data: realGdpValues, 
+                    borderColor: '#10b981', // Emerald Color
+                    tension: 0.1, 
+                    pointRadius: 0 
+                }] 
+            },
+            options: { ...lineChartOptions, plugins: { legend: { display: false } } }
+        });
+
+        chartInstances.usdgdpChart = new Chart(document.getElementById("usdgdpChart"), {
+            type: 'line',
+            data: { labels: gdpLabels, datasets: [{ label: 'USD GDP', data: usdGdpValues, borderColor: chartColors[4], tension: 0.1, pointRadius: 0 }] },
+            options: { ...lineChartOptions, plugins: { legend: { display: false } } }
+        });
+        
+        chartInstances.realInterestDiffChart = new Chart(document.getElementById("realInterestDiffChart"), {
+            type: 'line',
+            data: { 
+                labels: gdpLabels.slice(0, realInterestDiffValues.length), 
+                datasets: [{ 
+                    label: 'Real Interest Rate Diff (%)', 
+                    data: realInterestDiffValues, 
+                    borderColor: '#f59e0b',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    fill: true,
+                    tension: 0.1, 
+                    pointRadius: 0 
+                }] 
+            },
+            options: { 
+                ...lineChartOptions,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.parsed.y.toFixed(2) + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        chartInstances.exchangeRateChart = new Chart(document.getElementById("exchangeRateChart"), {
+            type: 'line',
+            data: { 
+                labels: exchangeRateLabels, 
+                datasets: [
+                    { label: 'Rate to USD', data: exchangeRateValues, borderColor: chartColors[5], tension: 0.1, pointRadius: 0 },
+                    {
+                        type: 'scatter',
+                        label: 'Intervention',
+                        data: allInterventionPoints,
+                        backgroundColor: '#ef4444', 
+                        pointStyle: 'rectRot',
+                        pointRadius: 8,
+                        pointHoverRadius: 10,
+                        order: 0
+                    }
+                ] 
+            },
+            options: { 
+                ...lineChartOptions, 
+                plugins: { 
+                    legend: { display: true },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                if (context.dataset.type === 'scatter') {
+                                    return context.raw.description; 
+                                }
+                                return `${context.dataset.label}: ${context.parsed.y.toFixed(2)}`;
+                            }
+                        }
+                    }
+                } 
+            }
+        });
+        
+        chartInstances.rateDiffCorrelationChart = new Chart(document.getElementById("rateDiffCorrelationChart"), {
+            type: 'line',
+            data: {
+                labels: exchangeRateLabels,
+                datasets: [
+                    {
+                        label: 'Real Interest Diff (%)',
+                        data: realInterestDiffValues,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        yAxisID: 'y',
+                        tension: 0.1,
+                        pointRadius: 0,
+                        order: 2
+                    },
+                    {
+                        label: 'Exchange Rate (vs USD)',
+                        data: exchangeRateValues,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        yAxisID: 'y1',
+                        tension: 0.1,
+                        pointRadius: 0,
+                        order: 1
+                    }
+                ]
+            },
+            options: {
+                ...lineChartOptions,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: 'Diff (%)' },
+                        grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: 'Exchange Rate' },
+                        grid: { drawOnChartArea: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: true },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) { label += ': '; }
+                                if (context.parsed.y !== null) { 
+                                    label += context.parsed.y.toFixed(4); 
+                                    if (context.dataset.yAxisID === 'y') label += '%';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        chartInstances.gdpPerCapitaUsdChart = new Chart(document.getElementById("gdpPerCapitaUsdChart"), {
+            type: 'line',
+            data: { 
+                labels: gdpLabels.slice(0, perCapitaLen), 
+                datasets: [{ 
+                    label: 'GDP Per Capita (USD)', 
+                    data: gdpPerCapitaUsdData, 
+                    borderColor: '#06b6d4', 
+                    tension: 0.1, 
+                    pointRadius: 0 
+                }] 
+            },
+            options: { ...lineChartOptions, plugins: { legend: { display: false } } }
+        });
+        
+        chartInstances.populationHistoryChart = new Chart(document.getElementById("populationHistoryChart"), {
+            type: 'line',
+            data: { labels: gdpLabels, datasets: [{ label: 'Population History', data: pastPopulationData, borderColor: chartColors[6], tension: 0.1, pointRadius: 0 }] },
+            options: { ...lineChartOptions, plugins: { legend: { display: false } } }
+        });
+
+        chartInstances.debtChart = new Chart(document.getElementById("debtChart"), {
+            type: 'line',
+            data: { 
+                labels: gdpLabels.slice(0, debtRatioData.length), 
+                datasets: [{ 
+                    label: 'Net Debt / GDP (%)', 
+                    data: debtRatioData, 
+                    borderColor: '#ef4444', 
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    fill: true,
+                    tension: 0.1, 
+                    pointRadius: 0 
+                }] 
+            },
+            options: { 
+                ...lineChartOptions, 
+                scales: {
+                    ...lineChartOptions.scales,
+                    y: {
+                        ...lineChartOptions.scales.y,
+                        ticks: { callback: function(value) { return value + '%'; } }
+                    }
+                },
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Ratio: ' + context.parsed.y.toFixed(2) + '%';
+                            }
+                        }
+                    }
+                } 
+            }
+        });
+
+        const modal = document.getElementById("chartModal");
+        const enlargedChartCanvas = document.getElementById("enlargedChartCanvas").getContext('2d');
+        let enlargedChart = null;
+
+        function openModal(chartInstance, chartId) {
+            modal.style.display = "flex";
+            if (enlargedChart) {
+                enlargedChart.destroy();
+            }
+            const modalOptions = JSON.parse(JSON.stringify(chartInstance.options));
+            modalOptions.plugins.legend.display = true;
+            let chartData = chartInstance.data;
+
+            if (chartId === 'industryData') {
+                const sliceN = 20;
+                const originalLabels = chartInstance.data.labels;
+                const slicedLabels = originalLabels.slice(-sliceN);
+                
+                // Map over ALL datasets to preserve comparison lines
+                const slicedDatasets = chartInstance.data.datasets.map(ds => ({
+                    ...ds,
+                    data: ds.data.slice(-sliceN)
+                }));
+
+                chartData = {
+                    labels: slicedLabels,
+                    datasets: slicedDatasets
+                };
+            }
+
+            enlargedChart = new Chart(enlargedChartCanvas, {
+                type: chartInstance.config.type,
+                data: chartData,
+                options: modalOptions
+            });
+        }
+
+        function closeModal() {
+            modal.style.display = "none";
+            if (enlargedChart) {
+                enlargedChart.destroy();
+                enlargedChart = null;
+            }
+        }
+
+        Object.keys(chartInstances).forEach(chartId => {
+            const chartCanvas = document.getElementById(chartId);
+            chartCanvas.onclick = () => {
+                openModal(chartInstances[chartId], chartId);
+            };
+        });
+
+        // --- Toggle History Logic (Last 100 Turns) ---
+        let isLast100Mode = false;
+        const toggleHistoryBtn = document.getElementById('toggleHistoryBtn');
+
+        if (toggleHistoryBtn) {
+            toggleHistoryBtn.addEventListener('click', () => {
+                isLast100Mode = !isLast100Mode;
+                updateChartsHistoryRange();
+                
+                // Update Button Visual State
+                if (isLast100Mode) {
+                    toggleHistoryBtn.innerHTML = '<i class="fas fa-globe"></i> Show All History';
+                    toggleHistoryBtn.style.backgroundColor = 'var(--primary-color)';
+                } else {
+                    toggleHistoryBtn.innerHTML = '<i class="fas fa-history"></i> Last 100 Turns';
+                    toggleHistoryBtn.style.backgroundColor = 'var(--accent-color)';
+                }
+            });
+        }
+
+        // 配列を末尾からcount個だけ切り出すヘルパー関数
+        function sliceData(dataArray, count) {
+            if (!isLast100Mode) return dataArray;
+            if (dataArray.length <= count) return dataArray;
+            return dataArray.slice(dataArray.length - count);
+        }
+
+        // --- ★追加: 比較機能ロジック ---
+        function toggleCountryComparison(checkbox, countryName) {
+            if (checkbox.checked) {
+                activeComparisons.add(countryName);
+            } else {
+                activeComparisons.delete(countryName);
+            }
+            refreshComparisonDatasets();
+        }
+
+        function getCountryColor(name) {
+            // 名前のハッシュから色を決定
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const index = Math.abs(hash) % comparisonColors.length;
+            return comparisonColors[index];
+        }
+
+        function refreshComparisonDatasets() {
+            // 更新対象のチャート
+            const targetCharts = [
+                { instance: chartInstances.usdgdpChart, dataKey: 'gdp_usd_history', labelSuffix: 'GDP (USD)' },
+                { instance: chartInstances.gdpPerCapitaUsdChart, dataKey: 'gdp_per_capita_history', labelSuffix: 'Per Capita (USD)' },
+                { instance: chartInstances.industryData, dataKey: 'industry_history', labelSuffix: 'Industry' }
+            ];
+
+            targetCharts.forEach(target => {
+                const chart = target.instance;
+                if (!chart) return;
+
+                // 1. 自国のデータを再取得してセット（sliceData適用）
+                let mainData;
+                if (target.dataKey === 'gdp_usd_history') mainData = usdGdpValues;
+                else if (target.dataKey === 'gdp_per_capita_history') mainData = gdpPerCapitaUsdData;
+                else mainData = industryData;
+
+                const mainDataset = chart.data.datasets[0];
+                mainDataset.data = sliceData(mainData, 100); 
+                
+                // 既存の比較国データセットをクリアして、自国のみにする
+                chart.data.datasets = [mainDataset];
+
+                // 2. 選択された比較国のデータを追加
+                activeComparisons.forEach(cName => {
+                    const cData = allCountriesData[cName];
+                    if (!cData) return;
+                    
+                    const rawData = cData[target.dataKey];
+                    // 自国のグラフと長さを合わせるためにスライスやパディングが必要な場合があるが、
+                    // Chart.jsはX軸ラベル数に合わせて描画する。
+                    // sliceDataを使って、表示モード（Last 100）に合わせる。
+                    const sliced = sliceData(rawData, 100);
+                    
+                    const color = getCountryColor(cName);
+                    
+                    chart.data.datasets.push({
+                        label: `${cName}`,
+                        data: sliced,
+                        borderColor: color,
+                        backgroundColor: color, 
+                        fill: false,
+                        tension: 0.1,
+                        pointRadius: 0,
+                        borderWidth: 2,
+                        pointHoverRadius: 5
+                    });
+                });
+                
+                chart.update();
+            });
+        }
+
+        function updateChartsHistoryRange() {
+            const count = 100;
+            
+            // シンプルなラインチャートを更新する内部関数
+            const updateLineChart = (chart, data, labels) => {
+                if (!chart) return;
+                const mainDataset = chart.data.datasets[0];
+                mainDataset.data = sliceData(data, count);
+                // ラベルもデータ数に合わせてスライス（データの長さに合わせるのが安全）
+                const currentDataLen = mainDataset.data.length;
+                chart.data.labels = labels.slice(labels.length - currentDataLen);
+                chart.update();
+            };
+
+            // 1. Population History
+            updateLineChart(chartInstances.populationHistoryChart, pastPopulationData, gdpLabels);
+
+            // 2. Exchange Rate
+            updateLineChart(chartInstances.exchangeRateChart, exchangeRateValues, exchangeRateLabels);
+
+            // 3. GDP (Loc)
+            updateLineChart(chartInstances.gdpChart, gdpValues, gdpLabels);
+
+            // ★追加: Real GDP (Loc)
+            updateLineChart(chartInstances.realGdpChart, realGdpValues, gdpLabels);
+
+            // 4. GDP (USD) -> 比較機能対応のため、refreshComparisonDatasets で更新する
+            // updateLineChart(chartInstances.usdgdpChart, usdGdpValues, gdpLabels);
+
+            // 5. GDP Per Capita (USD) -> 比較機能対応のため、refreshComparisonDatasets で更新する
+            // updateLineChart(chartInstances.gdpPerCapitaUsdChart, gdpPerCapitaUsdData, gdpLabels.slice(0, gdpPerCapitaUsdData.length));
+            
+            // ラベルの更新のみ手動で行う (refreshComparisonDatasetsではラベル更新は行わないため)
+            // GDP (USD) Labels
+            const usdGdpLen = sliceData(usdGdpValues, count).length;
+            chartInstances.usdgdpChart.data.labels = gdpLabels.slice(gdpLabels.length - usdGdpLen);
+            
+            // GDP Per Capita Labels
+            const perCapitaSliceLen = sliceData(gdpPerCapitaUsdData, count).length;
+            chartInstances.gdpPerCapitaUsdChart.data.labels = gdpLabels.slice(0, perCapitaLen).slice(gdpLabels.slice(0, perCapitaLen).length - perCapitaSliceLen);
+
+            // Industry Labels (Added for comparison)
+            const industrySliceLen = sliceData(industryData, count).length;
+            chartInstances.industryData.data.labels = gdpLabels.slice(gdpLabels.length - industrySliceLen);
+
+            // ★ここで比較チャートのデータを更新（自国データのスライス含む）
+            refreshComparisonDatasets();
+
+            // 6. Real Interest Diff
+            updateLineChart(chartInstances.realInterestDiffChart, realInterestDiffValues, gdpLabels.slice(0, realInterestDiffValues.length));
+
+            // 7. Price Inflation
+            updateLineChart(chartInstances.priceChart, priceInflationData, inflationLabels);
+
+            // 8. Industry History -> 比較機能対応のため、refreshComparisonDatasets で更新する
+            // updateLineChart(chartInstances.industryData, industryData, gdpLabels);
+
+            // 9. Debt / GDP Ratio
+            updateLineChart(chartInstances.debtChart, debtRatioData, gdpLabels.slice(0, debtRatioData.length));
+            
+            // 10. Currency Index (Added)
+            updateLineChart(chartInstances.currencyIndexChart, currencyIndexValues, gdpLabels.slice(0, currencyIndexValues.length));
+
+            // 11. Rate & Interest Correlation (2軸チャート)
+            const corrChart = chartInstances.rateDiffCorrelationChart;
+            if (corrChart) {
+                // Dataset 0: Real Interest Diff
+                corrChart.data.datasets[0].data = sliceData(realInterestDiffValues, count);
+                // Dataset 1: Exchange Rate
+                corrChart.data.datasets[1].data = sliceData(exchangeRateValues, count);
+                
+                // Labels (Exchange Rate Labels)
+                const dataLen = corrChart.data.datasets[1].data.length;
+                corrChart.data.labels = exchangeRateLabels.slice(exchangeRateLabels.length - dataLen);
+                
+                corrChart.update();
+            }
+            
+            // --- 散布図 (Scatter) のフィルタリング ---
+            // Exchange Rate Chart (Scatter part)
+            const exChart = chartInstances.exchangeRateChart;
+            const exLabels = exChart.data.labels; // Already updated by updateLineChart above
+            const visibleExLabels = new Set(exLabels);
+            exChart.data.datasets[1].data = allInterventionPoints.filter(p => visibleExLabels.has(p.x));
+            exChart.update();
+
+            // GDP Chart (Scatter part)
+            const gChart = chartInstances.gdpChart;
+            const gLabels = gChart.data.labels; // Already updated
+            const visibleGLabels = new Set(gLabels);
+            gChart.data.datasets[1].data = allPolicyPoints.filter(p => visibleGLabels.has(p.x));
+            gChart.update();
+        }
+        
+        document.querySelector(".close-button").onclick = closeModal;
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>

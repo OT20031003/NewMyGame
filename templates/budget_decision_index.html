@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Budget Strategy | World Sim</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+
+    <style>
+        :root {
+            /* カラーパレット */
+            --text-primary: #ffffff;
+            --text-secondary: #cbd5e1;
+            --text-accent: #38bdf8;
+
+            /* グラスモーフィズム設定 */
+            --card-bg: rgba(15, 23, 42, 0.65); /* 背景を少し透かす */
+            --card-border: rgba(255, 255, 255, 0.1);
+            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            --backdrop-blur: 16px;
+
+            /* 機能色 */
+            --primary-color: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.6);
+            --success-color: #10b981;
+            --danger-color: #f43f5e;
+            --warning-color: #f59e0b;
+            
+            --slider-track: rgba(255, 255, 255, 0.15);
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+            color: var(--text-primary);
+            line-height: 1.6;
+
+            /* 宇宙から見た地球の背景画像 (Unsplash source) */
+            background: url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2072&auto=format&fit=crop') no-repeat center center fixed;
+            background-size: cover;
+        }
+
+        /* 背景を暗くして文字を読みやすくするオーバーレイ */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 15, 30, 0.4); /* 暗さの調整 */
+            z-index: -1;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        /* --- ヘッダー --- */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 3rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.15);
+            position: relative;
+        }
+
+        header h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 2.8rem;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.03em;
+            /* タイトルに輝きを与えるグラデーション */
+            background: linear-gradient(to right, #fff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(255,255,255,0.2);
+        }
+
+        .header-meta {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .turn-display {
+            font-family: 'Space Grotesk', monospace;
+            font-size: 1.1rem;
+            background: rgba(255,255,255,0.1);
+            padding: 0.5rem 1.2rem;
+            border-radius: 50px;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* --- ボタン --- */
+        .btn {
+            padding: 0.8rem 1.5rem;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            border: none;
+            font-size: 0.95rem;
+        }
+
+        .btn-glass {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(4px);
+        }
+        .btn-glass:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .btn-submit {
+            background: linear-gradient(135deg, var(--primary-color), #8b5cf6);
+            color: white;
+            font-size: 1.2rem;
+            padding: 1.2rem 4rem;
+            border-radius: 50px;
+            box-shadow: 0 0 20px var(--primary-glow);
+            letter-spacing: 0.05em;
+            font-family: 'Space Grotesk', sans-serif;
+        }
+        .btn-submit:hover {
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 0 30px var(--primary-glow);
+        }
+
+        /* --- グリッドレイアウト --- */
+        .budget-cards-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 2.5rem;
+            margin-bottom: 4rem;
+        }
+
+        /* --- カードデザイン --- */
+        .country-budget-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(var(--backdrop-blur));
+            -webkit-backdrop-filter: blur(var(--backdrop-blur));
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 2rem;
+            box-shadow: var(--card-shadow);
+            transition: transform 0.3s ease, border-color 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .country-budget-card:hover {
+            border-color: rgba(255,255,255,0.3);
+            transform: translateY(-5px);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 1.5rem;
+        }
+
+        .country-name {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        /* 税率入力 */
+        .tax-control {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 8px 16px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .tax-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .tax-input {
+            width: 70px;
+            background: transparent;
+            border: none;
+            color: var(--text-accent);
+            font-family: 'Space Grotesk', monospace;
+            font-size: 1.2rem;
+            font-weight: 700;
+            text-align: right;
+        }
+        .tax-input:focus { outline: none; border-bottom: 1px solid var(--primary-color); }
+
+        /* --- スライダーセクション --- */
+        .control-group {
+            display: grid;
+            grid-template-columns: 110px 1fr 90px;
+            align-items: center;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .control-label {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .control-label i { width: 24px; text-align: center; font-size: 1.1rem; }
+
+        /* Custom Slider */
+        .slider-wrapper {
+            position: relative;
+            height: 24px;
+            display: flex;
+            align-items: center;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+            z-index: 2;
+        }
+        input[type=range]:focus { outline: none; }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: var(--slider-track);
+            border-radius: 2px;
+        }
+        
+        input[type=range]::-webkit-slider-thumb {
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -8px;
+            box-shadow: 0 0 15px rgba(255,255,255,0.8);
+            transition: transform 0.2s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+        /* 数値入力 */
+        .number-input {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #fff;
+            font-family: 'Space Grotesk', monospace;
+            padding: 8px;
+            width: 100%;
+            text-align: right;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .number-input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        /* --- フッター & 合計バー --- */
+        .card-footer {
+            margin-top: 1rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .total-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .status-badge {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(4px);
+        }
+        
+        .status-surplus { color: var(--success-color); border: 1px solid rgba(16, 185, 129, 0.4); box-shadow: 0 0 10px rgba(16,185,129,0.2); }
+        .status-deficit { color: var(--danger-color); border: 1px solid rgba(244, 63, 94, 0.4); box-shadow: 0 0 10px rgba(244,63,94,0.2); }
+        .status-balanced { color: var(--primary-color); border: 1px solid rgba(59, 130, 246, 0.4); box-shadow: 0 0 10px rgba(59,130,246,0.2); }
+
+        .total-value-group {
+            font-family: 'Space Grotesk', monospace;
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+        .total-value-group span { font-size: 0.9rem; color: var(--text-secondary); margin-right: 8px; font-weight: 400; font-family: 'Outfit', sans-serif; }
+
+        /* プログレスバー */
+        .progress-track {
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.3s;
+            position: relative;
+            box-shadow: 0 0 15px currentColor;
+        }
+
+        .balance-marker {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            width: 2px;
+            background: rgba(255,255,255,0.5);
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .scale-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 0.75rem;
+            color: rgba(255,255,255,0.4);
+            font-family: 'Space Grotesk', monospace;
+        }
+
+        .submit-container {
+            text-align: center;
+            margin-top: 4rem;
+            padding-bottom: 6rem;
+        }
+
+        /* アイコン色 */
+        .icon-pension { color: #a5b4fc; filter: drop-shadow(0 0 5px rgba(165,180,252,0.5)); }
+        .icon-industry { color: #67e8f9; filter: drop-shadow(0 0 5px rgba(103,232,249,0.5)); }
+        .icon-military { color: #fda4af; filter: drop-shadow(0 0 5px rgba(253,164,175,0.5)); }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-title">
+                <h1>Budget Strategy</h1>
+                <div class="header-meta">
+                    <span class="turn-display">Turn {{ turn }}</span>
+                </div>
+            </div>
+            <a href="{{ url_for('index') }}" class="btn btn-glass">
+                <i class="fas fa-arrow-left"></i> Dashboard
+            </a>
+        </header>
+        
+        <form method="POST" action="{{ url_for('submit_budget') }}">
+            <div class="budget-cards-container">
+                {% for country in countries %}
+                <div class="country-budget-card" data-country="{{ country.name }}">
+                    
+                    <div class="card-header">
+                        <div class="country-name">
+                            <i class="fas fa-globe-americas" style="color: var(--text-accent);"></i> {{ country.name }}
+                        </div>
+                        
+                        <div class="tax-control">
+                            <label for="tax_{{ country.name }}" class="tax-label">Tax</label>
+                            <input type="number" 
+                                   class="tax-input"
+                                   id="tax_{{ country.name }}" 
+                                   name="tax_{{ country.name }}" 
+                                   step="0.01" min="0" max="1" 
+                                   value="{{ "%.2f"|format(country.tax) }}">
+                        </div>
+                    </div>
+
+                    <div class="card-body">
+                        <div class="control-group">
+                            <div class="control-label">
+                                <i class="fas fa-hand-holding-heart icon-pension"></i> Pension
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" min="0" max="150" step="0.1" 
+                                       value="{{ "%.1f"|format(country.budget.budget[1]) }}"
+                                       class="slider-input" data-target="pension_{{ country.name }}">
+                            </div>
+                            <input type="number" 
+                                   id="pension_{{ country.name }}" 
+                                   name="pension_{{ country.name }}" 
+                                   class="number-input" 
+                                   min="0" max="1000" step="0.1" 
+                                   value="{{ "%.1f"|format(country.budget.budget[1]) }}">
+                        </div>
+
+                        <div class="control-group">
+                            <div class="control-label">
+                                <i class="fas fa-city icon-industry"></i> Industry
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" min="0" max="150" step="0.1" 
+                                       value="{{ "%.1f"|format(country.budget.budget[2]) }}"
+                                       class="slider-input" data-target="industry_{{ country.name }}">
+                            </div>
+                            <input type="number" 
+                                   id="industry_{{ country.name }}" 
+                                   name="industry_{{ country.name }}" 
+                                   class="number-input" 
+                                   min="0" max="1000" step="0.1" 
+                                   value="{{ "%.1f"|format(country.budget.budget[2]) }}">
+                        </div>
+
+                        <div class="control-group">
+                            <div class="control-label">
+                                <i class="fas fa-shield-alt icon-military"></i> Military
+                            </div>
+                            <div class="slider-wrapper">
+                                <input type="range" min="0" max="150" step="0.1" 
+                                       value="{{ "%.1f"|format(country.budget.budget[3]) }}"
+                                       class="slider-input" data-target="military_{{ country.name }}">
+                            </div>
+                            <input type="number" 
+                                   id="military_{{ country.name }}" 
+                                   name="military_{{ country.name }}" 
+                                   class="number-input" 
+                                   min="0" max="1000" step="0.1" 
+                                   value="{{ "%.1f"|format(country.budget.budget[3]) }}">
+                        </div>
+                    </div>
+
+                    <div class="card-footer">
+                        <div class="total-header">
+                            <span class="status-badge" id="status_{{ country.name }}">Balanced</span>
+                            <div class="total-value-group">
+                                <span>Allocated</span>
+                                <span id="total_{{ country.name }}">100.0</span>%
+                            </div>
+                        </div>
+                        
+                        <div style="position: relative;">
+                            <div class="progress-track">
+                                <div class="balance-marker"></div>
+                                <div class="progress-fill" id="bar_{{ country.name }}" style="width: 50%;"></div>
+                            </div>
+                            <div class="scale-labels">
+                                <span>0%</span>
+                                <span>100%</span>
+                                <span>200%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div class="submit-container">
+                <button type="submit" class="btn btn-submit">
+                    Execute Strategic Plan <i class="fas fa-arrow-right" style="margin-left: 8px;"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.country-budget-card').forEach(card => {
+                const countryName = card.dataset.country;
+                
+                // Inputs
+                const inputs = {
+                    pension: card.querySelector(`#pension_${countryName}`),
+                    industry: card.querySelector(`#industry_${countryName}`),
+                    military: card.querySelector(`#military_${countryName}`)
+                };
+
+                // Sliders
+                const sliders = card.querySelectorAll('.slider-input');
+
+                // Display Elements
+                const totalSpan = card.querySelector(`#total_${countryName}`);
+                const statusBadge = card.querySelector(`#status_${countryName}`);
+                const progressBar = card.querySelector(`#bar_${countryName}`);
+
+                // --- Sync Function: Slider <-> Number Input ---
+                function syncValues(source, isSlider) {
+                    const targetId = isSlider ? source.dataset.target : source.id;
+                    
+                    // Find counterpart
+                    let counterpart;
+                    if (isSlider) {
+                        counterpart = document.getElementById(targetId);
+                    } else {
+                        // Find slider pointing to this ID
+                        counterpart = Array.from(sliders).find(s => s.dataset.target === targetId);
+                    }
+
+                    if (counterpart) {
+                        counterpart.value = source.value;
+                    }
+                    updateBudgetTotal();
+                }
+
+                // --- Calculation Logic ---
+                function updateBudgetTotal() {
+                    const pension = parseFloat(inputs.pension.value) || 0;
+                    const industry = parseFloat(inputs.industry.value) || 0;
+                    const military = parseFloat(inputs.military.value) || 0;
+                    
+                    // Calculate Total
+                    const total = parseFloat((pension + industry + military).toFixed(1));
+                    totalSpan.textContent = total.toFixed(1);
+
+                    // Update Status Visuals
+                    let statusText = "Balanced";
+                    let statusClass = "status-balanced";
+                    let barColor = "var(--primary-color)";
+                    // glow color for shadow
+                    let glowColor = "var(--primary-glow)";
+
+                    if (total < 99.9) {
+                        statusText = "Surplus (Saving)";
+                        statusClass = "status-surplus";
+                        barColor = "var(--success-color)";
+                    } else if (total > 100.1) {
+                        statusText = "Deficit (Debt)";
+                        statusClass = "status-deficit";
+                        barColor = "var(--danger-color)";
+                    }
+
+                    // Update Badge
+                    statusBadge.textContent = statusText;
+                    statusBadge.className = `status-badge ${statusClass}`;
+
+                    // Update Progress Bar
+                    // Scale: 0% to 200%. 100% is the middle (50% width).
+                    let barWidth = total / 2;
+                    if (barWidth > 100) barWidth = 100; // Cap at visual limit
+
+                    progressBar.style.width = `${barWidth}%`;
+                    progressBar.style.backgroundColor = barColor;
+                    progressBar.style.color = barColor; // Used for box-shadow currentColor
+                }
+
+                // --- Event Listeners ---
+                
+                // 1. Slider changes
+                sliders.forEach(slider => {
+                    slider.addEventListener('input', (e) => syncValues(e.target, true));
+                });
+
+                // 2. Number input changes
+                Object.values(inputs).forEach(input => {
+                    input.addEventListener('input', (e) => syncValues(e.target, false));
+                });
+
+                // Initial calculation
+                updateBudgetTotal();
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Simulation Dashboard</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            /* Color Palette - Deep Space Theme */
+            --bg-body: #0f172a;
+            --bg-card: rgba(30, 41, 59, 0.7); /* Glassy */
+            --bg-header: rgba(15, 23, 42, 0.85);
+            
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-accent: #38bdf8; /* Light Blue */
+            
+            --border-color: rgba(148, 163, 184, 0.1);
+            
+            --color-primary: #3b82f6;
+            --color-primary-hover: #2563eb;
+            --color-success: #10b981;
+            --color-danger: #ef4444;
+            --color-warning: #f59e0b;
+            --color-purple: #8b5cf6;
+            
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+            
+            --radius-lg: 16px;
+            --radius-md: 8px;
+            --radius-sm: 4px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-body);
+            background-image: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 70%);
+            color: var(--text-main);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        /* --- Utility Classes --- */
+        .text-success { color: var(--color-success); }
+        .text-danger { color: var(--color-danger); }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .text-right { text-align: right; }
+        
+        /* --- Layout --- */
+        .app-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 120px 2rem 4rem 2rem; /* Top padding for sticky header */
+        }
+
+        /* --- Sticky Header & Controls --- */
+        .sticky-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 100;
+            background-color: var(--bg-header);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: var(--shadow-md);
+        }
+
+        .header-title h2 {
+            margin: 0;
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .header-title .turn-badge {
+            background: linear-gradient(135deg, var(--color-primary), var(--color-purple));
+            font-size: 0.9rem;
+            padding: 4px 12px;
+            border-radius: 999px;
+            color: white;
+            box-shadow: 0 2px 10px rgba(59, 130, 246, 0.3);
+        }
+
+        .control-panel {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .action-group {
+            display: flex;
+            gap: 0.75rem;
+            padding-right: 1.5rem;
+            border-right: 1px solid var(--border-color);
+        }
+
+        .turn-control {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: rgba(255,255,255,0.03);
+            padding: 6px 12px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+        }
+
+        /* --- Buttons & Inputs --- */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 0.6rem 1.2rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            border-radius: var(--radius-md);
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            color: white;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .btn:active { transform: translateY(1px); }
+
+        .btn-glass {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+        .btn-glass:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        /* New style for toggle button active state */
+        .btn-glass.active-simple {
+            background: rgba(59, 130, 246, 0.15);
+            border-color: var(--color-primary);
+            color: var(--text-accent);
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+        }
+        .btn-primary:hover { background: var(--color-primary-hover); box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
+
+        .btn-play {
+            background: linear-gradient(135deg, var(--color-success), #059669);
+        }
+        .btn-play:hover { filter: brightness(1.1); box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
+
+        .input-turn {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 700;
+            width: 60px;
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
+            transition: border-color 0.2s;
+        }
+        .input-turn:focus {
+            outline: none;
+            border-color: var(--color-primary);
+        }
+
+        /* --- Grid Layout --- */
+        .grid-countries {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 2rem;
+            margin-bottom: 4rem;
+        }
+
+        /* --- Country Card --- */
+        .card {
+            background-color: var(--bg-card);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-lg);
+            border-color: rgba(148, 163, 184, 0.3);
+        }
+
+        /* Card Header */
+        .card-header {
+            padding: 1.25rem 1.5rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .country-title {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .country-title a { color: var(--text-main); text-decoration: none; transition: color 0.2s; }
+        .country-title a:hover { color: var(--text-accent); }
+        
+        .currency-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+        }
+
+        /* Card Body */
+        .card-body {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Hero Stat (GDP) */
+        .hero-stat {
+            text-align: center;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .hero-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 0.25rem; }
+        .hero-value { font-size: 2rem; font-weight: 800; color: white; display: block; line-height: 1.2; }
+        .hero-sub { font-size: 0.9rem; color: var(--text-muted); margin-top: 4px; display: block;}
+
+        /* Stat Groups */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+        }
+        
+        .stat-col {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+        .stat-label { font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+        .stat-value { font-size: 0.95rem; font-weight: 600; color: var(--text-main); }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+        
+        .pill-change {
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        .pill-positive { background: rgba(16, 185, 129, 0.15); color: var(--color-success); }
+        .pill-negative { background: rgba(239, 68, 68, 0.15); color: var(--color-danger); }
+        
+        .change-text { font-size: 0.75rem; font-weight: 500; margin-left: 6px; }
+
+        /* Card Footer (Interest Input) */
+        .card-footer {
+            padding: 1rem 1.5rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .interest-input-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+        .interest-label { font-size: 0.9rem; font-weight: 500; color: var(--text-muted); display: flex; gap: 6px; align-items: center; }
+        .interest-field {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: white;
+            padding: 6px 10px;
+            width: 80px;
+            text-align: right;
+            font-family: 'JetBrains Mono', monospace;
+            transition: all 0.2s;
+        }
+        .interest-field:focus { outline: none; border-color: var(--color-primary); background: rgba(255, 255, 255, 0.1); }
+        .interest-field::placeholder { color: rgba(255,255,255,0.2); }
+
+        /* --- Charts Section --- */
+        .section-header {
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .section-header h3 { font-size: 1.5rem; margin: 0; font-weight: 600; }
+        .section-line { flex-grow: 1; height: 1px; background: var(--border-color); }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+            gap: 2rem;
+        }
+        
+        .chart-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            height: 400px;
+        }
+        .chart-card h4 { text-align: center; margin: 0 0 1.5rem 0; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.9rem; }
+
+        /* --- Loader --- */
+        #loader {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(5px);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(59, 130, 246, 0.1);
+            border-left-color: var(--color-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sticky-header { flex-direction: column; gap: 1rem; padding: 1rem; }
+            .control-panel { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+            .action-group { border-right: none; padding-right: 0; }
+            .app-container { padding-top: 180px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="loader"><div class="spinner"></div></div>
+
+    <div class="app-container">
+        
+        <form method="POST" action="/advance_turn" onsubmit="showLoader()">
+            
+            <header class="sticky-header">
+                <div class="header-title">
+                    <h2>
+                        <i class="fas fa-globe-americas text-accent"></i>
+                        World Sim
+                        <span class="turn-badge">{{ turn }} Turn</span>
+                    </h2>
+                </div>
+
+                <div class="control-panel">
+                    <div class="action-group">
+                        <button type="button" id="toggleViewBtn" class="btn btn-glass" style="margin-right: 8px;">
+                            <i class="fas fa-filter"></i> <span>Simple View</span>
+                        </button>
+
+                        <a href="{{ url_for('quit') }}" class="btn btn-glass">
+                            <i class="fas fa-save"></i> Save
+                        </a>
+                        {% if turn % turn_year == 0 %}
+                        <a href="{{ url_for('budget_decision_index') }}" class="btn btn-glass">
+                            <i class="fas fa-landmark"></i> Budget
+                        </a>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="turn-control">
+                        <label for="turn_count_input" style="color: var(--text-muted); font-size: 0.9rem;">Adv:</label>
+                        <input type="number" id="turn_count_input" name="turn_count" min="1" value="1" class="input-turn">
+                        <button type="submit" class="btn btn-play">
+                            <i class="fas fa-play"></i> Next
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            {% set base_currencies = [] %}
+            {% for m in moneys %}
+                {% if m.base_currency %}
+                    {% set _ = base_currencies.append(m.name) %}
+                {% endif %}
+            {% endfor %}
+
+            <div class="grid-countries">
+                {% for country in countries %}
+                
+                {% set is_base = country.money_name in base_currencies %}
+                
+                <article class="card" 
+         data-country-card 
+         data-selfop="{{ 'true' if country.selfoperation else 'false' }}"
+         data-base="{{ 'true' if is_base else 'false' }}">
+    
+                    <div class="card-header">
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <h3 class="country-title">
+                                <i class="fas fa-flag" style="color: var(--color-primary);"></i>
+                                <a href="{{ url_for('show_country', name=country.name) }}">{{ country.name }}</a>
+                            </h3>
+                            <span class="currency-badge">{{ country.money_name }}</span>
+                        </div>
+
+                        <div>
+                            <a href="{{ url_for('toggle_operation', name=country.name) }}" 
+                            class="btn btn-glass" 
+                            style="padding: 4px 10px; font-size: 0.8rem; {{ 'border-color: var(--color-success); color: var(--color-success);' if country.selfoperation else 'border-color: var(--color-warning); color: var(--color-warning);' }}">
+                                {% if country.selfoperation %}
+                                    <i class="fas fa-robot"></i> AI
+                                {% else %}
+                                    <i class="fas fa-user"></i> Player
+                                {% endif %}
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="card-body">
+                        <div class="hero-stat">
+                            <div class="hero-label">GDP (USD)</div>
+                            <span class="hero-value font-mono">{{ "%d"|format(country.get_gdp_usd()) }}</span>
+                            
+                            {% set gdp_change = country.get_gdp_usd_change() %}
+                            <div class="hero-sub">
+                                <span class="pill-change {{ 'pill-positive' if gdp_change >= 0 else 'pill-negative' }}">
+                                    {{ "%+.2f"|format(gdp_change) }}%
+                                </span>
+                                vs prev
+                            </div>
+                        </div>
+
+                        <div class="stats-grid">
+                            <div class="stat-col">
+                                <div style="margin-bottom: 0.2rem; color: var(--text-accent); font-weight: 600; font-size: 0.8rem; text-transform: uppercase;">Economy</div>
+                                
+                                <div class="stat-row">
+                                    <span class="stat-label">GDP (Loc)</span>
+                                    <div class="text-right">
+                                        <div class="stat-value font-mono">{{ "%d"|format(country.get_gdp()) }}</div>
+                                        {% set gdp_loc_change = country.get_gdp_change() %}
+                                        <div class="change-text {{ 'text-success' if gdp_loc_change >= 0 else 'text-danger' }}">
+                                            {{ "%+.1f"|format(gdp_loc_change) }}%
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="stat-row">
+                                    <span class="stat-label">Price</span>
+                                    <div class="text-right">
+                                        <div class="stat-value font-mono">{{ "%.2f"|format(country.price.get_price()) }}</div>
+                                        {% set price_change = country.price.get_price_change_rate() %}
+                                        <div class="change-text {{ 'text-success' if price_change >= 0 else 'text-danger' }}">
+                                            {{ "%+.2f"|format(price_change) }}%
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="stat-row">
+                                    <span class="stat-label">Price (USD)</span>
+                                    <div class="text-right">
+                                        <div class="stat-value font-mono">{{ "%.2f"|format(country.price_usd) }}</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="stat-row">
+                                    <span class="stat-label">Ex. Rate</span>
+                                    <div class="text-right">
+                                        <div class="stat-value font-mono">{{ "%.2f"|format(country.exchange_rate) }}</div>
+                                    </div>
+                                </div>
+
+                                <div class="stat-row">
+                                    <span class="stat-label">Inc/Price</span>
+                                    <div class="text-right">
+                                        <div class="stat-value font-mono">{{ "%.2f"|format(country.price_salary) }}</div>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <div class="stat-col">
+                                <div style="margin-bottom: 0.2rem; color: var(--color-purple); font-weight: 600; font-size: 0.8rem; text-transform: uppercase;">Power</div>
+                                
+                                <div style="margin-bottom: 8px;">
+                                    <div class="stat-row" style="margin-bottom: 2px;">
+                                        <span class="stat-label"><i class="fas fa-industry"></i> Ind</span>
+                                        <div class="text-right">
+                                            <span class="stat-value font-mono">{{ "%.1f"|format(country.industry.caluc_power()) }}</span>
+                                            {% set ind_change = country.industry.change_power() %}
+                                            <span class="change-text {{ 'text-success' if ind_change >= 0 else 'text-danger' }}">
+                                                {{ "%+.1f"|format(ind_change) }}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="progress-bar-bg">
+                                        <div class="progress-bar-fill" style="width: {{ [(country.industry.caluc_power() / 50000 * 100), 100]|min }}%; background-color: var(--color-primary);"></div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div class="stat-row" style="margin-bottom: 2px;">
+                                        <span class="stat-label"><i class="fas fa-shield-alt"></i> Mil</span>
+                                        <div class="text-right">
+                                            <span class="stat-value font-mono">{{ "%.1f"|format(country.military.caluc_power()) }}</span>
+                                            {% set mil_change = country.military.change_power() %}
+                                            <span class="change-text {{ 'text-success' if mil_change >= 0 else 'text-danger' }}">
+                                                {{ "%+.1f"|format(mil_change) }}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="progress-bar-bg">
+                                        <div class="progress-bar-fill" style="width: {{ [(country.military.caluc_power() / 10000 * 100), 100]|min }}%; background-color: var(--color-danger);"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 0.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05);">
+                            <div style="margin-bottom: 0.5rem; color: var(--color-success); font-weight: 600; font-size: 0.8rem; text-transform: uppercase;">Reserves</div>
+                            
+                            <div class="stat-row">
+                                <span class="stat-label"><i class="fas fa-university"></i> FX (USD)</span>
+                                <div style="text-align: right;">
+                                    <span class="stat-value font-mono">{{ "%d"|format(country.usd) }}</span>
+                                    {% set usd_change = country.get_usd_change() %}
+                                    <span class="{{ 'text-success' if usd_change >= 0 else 'text-danger' }}" style="font-size: 0.75rem; margin-left: 4px;">
+                                        {{ "%+.1f"|format(usd_change) }}%
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="stat-row">
+                                <span class="stat-label"><i class="fas fa-wallet"></i> Domestic</span>
+                                <div style="text-align: right;">
+                                    <span class="stat-value font-mono">{{ "%d"|format(country.domestic_money) }}</span>
+                                    {% set dom_change = country.get_domestic_money_change() %}
+                                    <span class="{{ 'text-success' if dom_change >= 0 else 'text-danger' }}" style="font-size: 0.75rem; margin-left: 4px;">
+                                        {{ "%+.1f"|format(dom_change) }}%
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card-footer">
+                        <div class="interest-input-group">
+                            <div class="interest-label">
+                                <i class="fas fa-percentage"></i> Interest Rate
+                                <span style="color: white; font-family: 'JetBrains Mono'; margin-left: 5px;">{{ "%.2f"|format(country.interest_rate) }}%</span>
+                            </div>
+                            <input type="text" 
+                                   name="interest_{{ country.money_name }}_{{ country.name }}" 
+                                   class="interest-field" 
+                                   placeholder="New %"
+                                   autocomplete="off">
+                        </div>
+
+                        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+                            <div class="interest-label" style="margin-bottom: 0.5rem;">
+                                <i class="fas fa-money-bill-wave"></i> Intervention (USD)
+                            </div>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <input type="number" 
+                                       name="intervention_{{ country.name }}" 
+                                       class="interest-field" 
+                                       placeholder="Amount USD" 
+                                       style="width: 100%; text-align: left;"
+                                       autocomplete="off">
+                            </div>
+                            <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 4px;">
+                                Positive: Buy USD (Sell {{ country.money_name }})<br>
+                                Negative: Sell USD (Buy {{ country.money_name }})
+                            </div>
+                        </div>
+                        </div>
+                </article>
+                {% endfor %}
+            </div>
+        </form>
+
+        <div class="section-header">
+            <h3>Global Analytics</h3>
+            <div class="section-line"></div>
+        </div>
+
+        <section class="charts-grid">
+            <div class="chart-card">
+                <h4>GDP Overview (USD)</h4>
+                <canvas id="gdpChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>GDP Distribution</h4>
+                <canvas id="gdpShareChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Industry Capacity</h4>
+                <canvas id="industryPowerChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>Military Strength</h4>
+                <canvas id="militaryPowerChart"></canvas>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // --- Loader ---
+        function showLoader() {
+            document.getElementById('loader').style.display = 'flex';
+        }
+
+        // --- Toggle View Logic (Added) ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggleBtn = document.getElementById('toggleViewBtn');
+            const icon = toggleBtn.querySelector('i');
+            const span = toggleBtn.querySelector('span');
+            
+            // 1. Load state from localStorage
+            const savedMode = localStorage.getItem('worldSimViewMode') || 'full'; // 'full' or 'simple'
+            applyViewMode(savedMode);
+
+            // 2. Click Handler
+            toggleBtn.addEventListener('click', () => {
+                const currentMode = localStorage.getItem('worldSimViewMode') || 'full';
+                const nextMode = (currentMode === 'full') ? 'simple' : 'full';
+                applyViewMode(nextMode);
+                localStorage.setItem('worldSimViewMode', nextMode);
+            });
+
+            function applyViewMode(mode) {
+                const cards = document.querySelectorAll('.card[data-country-card]');
+                
+                if (mode === 'simple') {
+                    // Switch to Simple View
+                    cards.forEach(card => {
+                        const isSelfOp = card.dataset.selfop === 'true';
+                        const isBase = card.dataset.base === 'true';
+                        
+                        // Condition: Show if NOT self-op OR is Base currency
+                        // "Show only countries where selfoperation=False and base_currency=True countries"
+                        // Interpretation: Union of (Non-SelfOp) and (BaseCurrency)
+                        
+                        if (!isSelfOp || isBase) {
+                            card.style.display = 'flex'; // Default display for card
+                        } else {
+                            card.style.display = 'none';
+                        }
+                    });
+                    
+                    // Update Button State
+                    icon.className = 'fas fa-list';
+                    span.textContent = 'Full View';
+                    toggleBtn.classList.add('active-simple');
+                    
+                } else {
+                    // Switch to Full View
+                    cards.forEach(card => {
+                        card.style.display = 'flex';
+                    });
+                    
+                    // Update Button State
+                    icon.className = 'fas fa-filter';
+                    span.textContent = 'Simple View';
+                    toggleBtn.classList.remove('active-simple');
+                }
+            }
+        });
+
+        // --- Chart.js Setup ---
+        // Apply theme colors to charts
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.borderColor = 'rgba(148, 163, 184, 0.1)';
+
+        const countryNames = [
+            {% for country in countries %} "{{ country.name }}", {% endfor %}
+        ];
+        const gdpValues = [
+            {% for country in countries %} {{ "%.2f"|format(country.gdp_usd) }}, {% endfor %}
+        ];
+        const industryPowerValues = [
+            {% for country in countries %} {{ "%.3f"|format(country.industry.caluc_power()) }}, {% endfor %}
+        ];
+        const militaryPowerValues = [
+            {% for country in countries %} {{ "%.3f"|format(country.military.caluc_power()) }}, {% endfor %}
+        ];
+
+        // Expanded distinct color palette for countries
+        const chartColors = [
+            '#3b82f6', // Blue (USA?)
+            '#ef4444', // Red (China?)
+            '#10b981', // Emerald (Japan?)
+            '#f59e0b', // Amber (Germany?)
+            '#8b5cf6', // Purple
+            '#06b6d4', // Cyan
+            '#ec4899', // Pink
+            '#6366f1', // Indigo
+            '#f97316', // Orange
+            '#14b8a6', // Teal
+            '#d946ef', // Fuchsia
+            '#84cc16', // Lime
+            '#64748b', // Slate
+            '#a855f7'  // Violet
+        ];
+        
+        const barChartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { 
+                    beginAtZero: true, 
+                    grid: { color: 'rgba(148, 163, 184, 0.05)' } 
+                },
+                x: { 
+                    grid: { display: false },
+                    ticks: { maxRotation: 45, minRotation: 45 }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    titleColor: '#f8fafc',
+                    bodyColor: '#cbd5e1',
+                    padding: 12,
+                    cornerRadius: 8,
+                    displayColors: true, // Show color box
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) { label += ': '; }
+                            if (context.parsed.y !== null) { label += context.parsed.y; }
+                            return label;
+                        }
+                    }
+                }
+            }
+        };
+
+        const pieChartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { 
+                    position: 'right', 
+                    labels: { boxWidth: 12, padding: 15, color: '#94a3b8' } 
+                }
+            },
+            layout: { padding: 20 }
+        };
+
+        function createChart(id, type, data, options) {
+            const ctx = document.getElementById(id).getContext('2d');
+            
+            // Assign chartColors to backgroundColor
+            // For Bar charts (data per country), we pass the array so each bar gets a color.
+            const datasets = data.datasets.map((ds) => ({
+                ...ds,
+                backgroundColor: chartColors, // Uses the array cyclically
+                borderWidth: 0,
+                borderRadius: type === 'bar' ? 4 : 0,
+            }));
+
+            new Chart(ctx, {
+                type: type,
+                data: { labels: data.labels, datasets: datasets },
+                options: options
+            });
+        }
+
+        // Init Charts
+        createChart('gdpChart', 'bar', {
+            labels: countryNames,
+            datasets: [{ label: 'GDP', data: gdpValues }]
+        }, barChartOptions);
+        
+        createChart('gdpShareChart', 'doughnut', {
+            labels: countryNames,
+            datasets: [{ label: 'Share', data: gdpValues }]
+        }, pieChartOptions);
+
+        createChart('industryPowerChart', 'bar', {
+            labels: countryNames,
+            datasets: [{ label: 'Industry', data: industryPowerValues }]
+        }, barChartOptions);
+
+        createChart('militaryPowerChart', 'bar', {
+            labels: countryNames,
+            datasets: [{ label: 'Military', data: militaryPowerValues }]
+        }, barChartOptions);
+
+    </script>
+</body>
+</html>
