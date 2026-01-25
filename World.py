@@ -85,6 +85,9 @@ class World:
             if my_money:
                 country.next_turn(my_money, my_money.get_rate(), self.turn)
         
+        # ★追加: このターンの貿易収支を一時記録する辞書を作成
+        current_turn_trade_balance = {c.name: 0.0 for c in self.Country_list}
+
         # 2. 国際貿易
         for i in range(len(self.Country_list)-1):
             country_a = self.Country_list[i]
@@ -155,13 +158,25 @@ class World:
                 if is_a_winner:
                     country_a.usd += trade_volume
                     country_b.usd -= trade_volume
+                    
+                    # ★追加: 貿易収支の記録
+                    current_turn_trade_balance[country_a.name] += trade_volume
+                    current_turn_trade_balance[country_b.name] -= trade_volume
                 else:
                     country_a.usd -= trade_volume
                     country_b.usd += trade_volume
+                    
+                    # ★追加: 貿易収支の記録
+                    current_turn_trade_balance[country_a.name] -= trade_volume
+                    current_turn_trade_balance[country_b.name] += trade_volume
 
         # 3. 履歴の更新
         for country in self.Country_list:
             country.past_usd.append(country.usd)
+            
+            # ★追加: 計算した貿易収支を履歴に追加
+            balance = current_turn_trade_balance.get(country.name, 0.0)
+            country.past_trade_balance.append(balance)
 
         # === 4. Currency Indexの計算 (★修正: 主要通貨のみ参照) ===
         # ★修正: 固定の50ではなく self.index_base_turn を使用

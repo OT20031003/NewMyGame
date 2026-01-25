@@ -67,6 +67,9 @@ class Country:
         self.domestic_money = 0.0 # 自国通貨残高
         self.past_domestic_money = [self.domestic_money]
         
+        # ★追加: 貿易収支履歴 (初期値0)
+        self.past_trade_balance = [0.0]
+        
         self.price_salary = self.get_average_salary() / self.price.get_price() if self.price.get_price() > 0 else -100.0 # 物価に対する収入の比率
         self.selfoperation = selfoperation # 自律的操作を行うかどうか TODO
         self.past_population.append(self.get_population())
@@ -380,8 +383,16 @@ class Country:
                 elif cnt == 19 + tcnt + pcnt + 2:
                     self.past_domestic_money = [float(x) for x in row]
                 
+                # ★追加: 貿易収支データの読み込み
+                elif cnt == 20 + tcnt + pcnt + 2:
+                    self.past_trade_balance = [float(x) for x in row]
+                
                 cnt += 1
             
+            # ★追加: 古いセーブデータ対策（データがない場合は0で埋める）
+            if not hasattr(self, 'past_trade_balance'):
+                self.past_trade_balance = [0.0] * len(self.past_gdp)
+
     def save_country(self):
         data = [[self.name,self.turn_year,self.money_name,
                  self.tax, self.bef_tax]]
@@ -417,6 +428,9 @@ class Country:
         data.append(self.past_usd)
         data.append(self.past_population)
         data.append(self.past_domestic_money)
+        
+        # ★追加: 貿易収支データの保存
+        data.append(self.past_trade_balance)
         
         with open(f'{self.name}.csv', 'w', newline='', encoding='utf-8') as file: 
             writer = csv.writer(file)

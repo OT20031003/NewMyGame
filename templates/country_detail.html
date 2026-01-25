@@ -435,37 +435,9 @@
             else gdpPerCapitaUsdData.push(0);
         }
         
-        // --- ★追加: 貿易収支 (Trade Balance) の計算 ---
-        const tradeBalanceData = [];
-        const interventionMap = {}; 
-
-        eventLogs.forEach(log => {
-            if (log.type === 'Intervention') {
-                const match = log.message.match(/USD:\s*([+-]?\d+)/);
-                if (match) {
-                    const amount = parseFloat(match[1]);
-                    if (!interventionMap[log.turn]) interventionMap[log.turn] = 0;
-                    interventionMap[log.turn] += amount;
-                }
-            }
-        });
-
-        // usdHistory[i] = Turn i 終了時の外貨準備
-        // 貿易収支 = (今期の外貨準備 - 前期の外貨準備) - 今期の介入額
-        for (let i = 1; i < usdHistory.length; i++) {
-            const currentUsd = usdHistory[i];
-            const prevUsd = usdHistory[i-1];
-            const totalChange = currentUsd - prevUsd;
-            
-            // Turn i の介入額
-            const intervention = interventionMap[i] || 0;
-            
-            const tradeBalance = totalChange - intervention;
-            tradeBalanceData.push(tradeBalance);
-        }
-        // 長さ合わせのために先頭にダミーデータを入れる(Turn 1から始まるため)
-        tradeBalanceData.unshift(0);
-
+        // --- ★追加: 貿易収支 (Trade Balance) データの読み込み ---
+        // Python側で記録されたデータをそのまま使用
+        const tradeBalanceData = {{ country.past_trade_balance|tojson }};
 
         const logBody = document.getElementById('eventLogBody');
         if (logBody) {
