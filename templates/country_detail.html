@@ -283,6 +283,9 @@
             <div class="card chart-card"><h2><i class="fas fa-history"></i> Population History</h2><canvas id="populationHistoryChart"></canvas></div>
             <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Income by Age</h2><canvas id="incomeChart"></canvas></div>
             <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Exchange Rate History (vs USD)</h2><canvas id="exchangeRateChart"></canvas></div>
+            
+            <div class="card chart-card"><h2><i class="fas fa-ship"></i> Trade Balance History (USD)</h2><canvas id="tradeBalanceChart"></canvas></div>
+            
             <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> GDP History ({{ country.money_name }})</h2><canvas id="gdpChart"></canvas></div>
             
             <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Real GDP History ({{ country.money_name }}, Base=Turn 0)</h2><canvas id="realGdpChart"></canvas></div>
@@ -382,11 +385,7 @@
         
         // --- ★追加: 実質GDP (Real GDP) の計算 ---
         const realGdpValues = [];
-        // 基準価格 (ターン0、またはデータが存在する最古の価格)
-        // ここでは past_price[0] を基準(=100)としてデフレーター計算する
         const basePrice = priceValues.length > 0 ? priceValues[0] : 100.0;
-        
-        // データ長を安全に合わせる
         const dataLen = Math.min(gdpValues.length, priceValues.length);
         
         for (let i = 0; i < dataLen; i++) {
@@ -394,9 +393,7 @@
             const currentPrice = priceValues[i];
             
             if (basePrice > 0 && currentPrice > 0) {
-                // デフレーター = 現在の物価 / 基準物価
                 const deflator = currentPrice / basePrice;
-                // 実質GDP = 名目GDP / デフレーター
                 const realGdp = nominal / deflator;
                 realGdpValues.push(realGdp);
             } else {
@@ -438,6 +435,38 @@
             else gdpPerCapitaUsdData.push(0);
         }
         
+        // --- ★追加: 貿易収支 (Trade Balance) の計算 ---
+        const tradeBalanceData = [];
+        const interventionMap = {}; 
+
+        eventLogs.forEach(log => {
+            if (log.type === 'Intervention') {
+                const match = log.message.match(/USD:\s*([+-]?\d+)/);
+                if (match) {
+                    const amount = parseFloat(match[1]);
+                    if (!interventionMap[log.turn]) interventionMap[log.turn] = 0;
+                    interventionMap[log.turn] += amount;
+                }
+            }
+        });
+
+        // usdHistory[i] = Turn i 終了時の外貨準備
+        // 貿易収支 = (今期の外貨準備 - 前期の外貨準備) - 今期の介入額
+        for (let i = 1; i < usdHistory.length; i++) {
+            const currentUsd = usdHistory[i];
+            const prevUsd = usdHistory[i-1];
+            const totalChange = currentUsd - prevUsd;
+            
+            // Turn i の介入額
+            const intervention = interventionMap[i] || 0;
+            
+            const tradeBalance = totalChange - intervention;
+            tradeBalanceData.push(tradeBalance);
+        }
+        // 長さ合わせのために先頭にダミーデータを入れる(Turn 1から始まるため)
+        tradeBalanceData.unshift(0);
+
+
         const logBody = document.getElementById('eventLogBody');
         if (logBody) {
             const sortedLogs = [...eventLogs].sort((a, b) => b.turn - a.turn);
@@ -729,6 +758,40 @@
             }
         });
         
+        // --- ★追加: 貿易収支チャートの定義 ---
+        chartInstances.tradeBalanceChart = new Chart(document.getElementById("tradeBalanceChart"), {
+            type: 'bar', 
+            data: { 
+                labels: gdpLabels.slice(0, tradeBalanceData.length), 
+                datasets: [{ 
+                    label: 'Trade Balance (USD)', 
+                    data: tradeBalanceData, 
+                    backgroundColor: (context) => {
+                        const val = context.raw;
+                        return val >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)';
+                    },
+                    borderColor: (context) => {
+                        const val = context.raw;
+                        return val >= 0 ? '#10b981' : '#ef4444';
+                    },
+                    borderWidth: 1
+                }] 
+            },
+            options: { 
+                ...barChartOptions, 
+                plugins: { 
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `Balance: ${context.parsed.y > 0 ? '+' : ''}${context.parsed.y.toFixed(0)} USD`;
+                            }
+                        }
+                    }
+                } 
+            }
+        });
+
         chartInstances.rateDiffCorrelationChart = new Chart(document.getElementById("rateDiffCorrelationChart"), {
             type: 'line',
             data: {
@@ -873,7 +936,6 @@
                 const originalLabels = chartInstance.data.labels;
                 const slicedLabels = originalLabels.slice(-sliceN);
                 
-                // Map over ALL datasets to preserve comparison lines
                 const slicedDatasets = chartInstance.data.datasets.map(ds => ({
                     ...ds,
                     data: ds.data.slice(-sliceN)
@@ -927,7 +989,6 @@
             });
         }
 
-        // 配列を末尾からcount個だけ切り出すヘルパー関数
         function sliceData(dataArray, count) {
             if (!isLast100Mode) return dataArray;
             if (dataArray.length <= count) return dataArray;
@@ -945,7 +1006,6 @@
         }
 
         function getCountryColor(name) {
-            // 名前のハッシュから色を決定
             let hash = 0;
             for (let i = 0; i < name.length; i++) {
                 hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -955,7 +1015,6 @@
         }
 
         function refreshComparisonDatasets() {
-            // 更新対象のチャート
             const targetCharts = [
                 { instance: chartInstances.usdgdpChart, dataKey: 'gdp_usd_history', labelSuffix: 'GDP (USD)' },
                 { instance: chartInstances.gdpPerCapitaUsdChart, dataKey: 'gdp_per_capita_history', labelSuffix: 'Per Capita (USD)' },
@@ -975,7 +1034,6 @@
                 const mainDataset = chart.data.datasets[0];
                 mainDataset.data = sliceData(mainData, 100); 
                 
-                // 既存の比較国データセットをクリアして、自国のみにする
                 chart.data.datasets = [mainDataset];
 
                 // 2. 選択された比較国のデータを追加
@@ -984,9 +1042,6 @@
                     if (!cData) return;
                     
                     const rawData = cData[target.dataKey];
-                    // 自国のグラフと長さを合わせるためにスライスやパディングが必要な場合があるが、
-                    // Chart.jsはX軸ラベル数に合わせて描画する。
-                    // sliceDataを使って、表示モード（Last 100）に合わせる。
                     const sliced = sliceData(rawData, 100);
                     
                     const color = getCountryColor(cName);
@@ -1011,92 +1066,63 @@
         function updateChartsHistoryRange() {
             const count = 100;
             
-            // シンプルなラインチャートを更新する内部関数
             const updateLineChart = (chart, data, labels) => {
                 if (!chart) return;
                 const mainDataset = chart.data.datasets[0];
                 mainDataset.data = sliceData(data, count);
-                // ラベルもデータ数に合わせてスライス（データの長さに合わせるのが安全）
                 const currentDataLen = mainDataset.data.length;
                 chart.data.labels = labels.slice(labels.length - currentDataLen);
                 chart.update();
             };
 
-            // 1. Population History
             updateLineChart(chartInstances.populationHistoryChart, pastPopulationData, gdpLabels);
-
-            // 2. Exchange Rate
             updateLineChart(chartInstances.exchangeRateChart, exchangeRateValues, exchangeRateLabels);
-
-            // 3. GDP (Loc)
             updateLineChart(chartInstances.gdpChart, gdpValues, gdpLabels);
-
-            // ★追加: Real GDP (Loc)
             updateLineChart(chartInstances.realGdpChart, realGdpValues, gdpLabels);
-
-            // 4. GDP (USD) -> 比較機能対応のため、refreshComparisonDatasets で更新する
-            // updateLineChart(chartInstances.usdgdpChart, usdGdpValues, gdpLabels);
-
-            // 5. GDP Per Capita (USD) -> 比較機能対応のため、refreshComparisonDatasets で更新する
-            // updateLineChart(chartInstances.gdpPerCapitaUsdChart, gdpPerCapitaUsdData, gdpLabels.slice(0, gdpPerCapitaUsdData.length));
             
-            // ラベルの更新のみ手動で行う (refreshComparisonDatasetsではラベル更新は行わないため)
-            // GDP (USD) Labels
+            // Labels for Comparison Charts
             const usdGdpLen = sliceData(usdGdpValues, count).length;
             chartInstances.usdgdpChart.data.labels = gdpLabels.slice(gdpLabels.length - usdGdpLen);
             
-            // GDP Per Capita Labels
             const perCapitaSliceLen = sliceData(gdpPerCapitaUsdData, count).length;
             chartInstances.gdpPerCapitaUsdChart.data.labels = gdpLabels.slice(0, perCapitaLen).slice(gdpLabels.slice(0, perCapitaLen).length - perCapitaSliceLen);
 
-            // Industry Labels (Added for comparison)
             const industrySliceLen = sliceData(industryData, count).length;
             chartInstances.industryData.data.labels = gdpLabels.slice(gdpLabels.length - industrySliceLen);
 
-            // ★ここで比較チャートのデータを更新（自国データのスライス含む）
             refreshComparisonDatasets();
 
-            // 6. Real Interest Diff
             updateLineChart(chartInstances.realInterestDiffChart, realInterestDiffValues, gdpLabels.slice(0, realInterestDiffValues.length));
-
-            // 7. Price Inflation
             updateLineChart(chartInstances.priceChart, priceInflationData, inflationLabels);
-
-            // 8. Industry History -> 比較機能対応のため、refreshComparisonDatasets で更新する
-            // updateLineChart(chartInstances.industryData, industryData, gdpLabels);
-
-            // 9. Debt / GDP Ratio
             updateLineChart(chartInstances.debtChart, debtRatioData, gdpLabels.slice(0, debtRatioData.length));
-            
-            // 10. Currency Index (Added)
             updateLineChart(chartInstances.currencyIndexChart, currencyIndexValues, gdpLabels.slice(0, currencyIndexValues.length));
 
-            // 11. Rate & Interest Correlation (2軸チャート)
+            // ★追加: Trade Balance
+            const tbChart = chartInstances.tradeBalanceChart;
+            if (tbChart) {
+                tbChart.data.datasets[0].data = sliceData(tradeBalanceData, count);
+                const currentLen = tbChart.data.datasets[0].data.length;
+                tbChart.data.labels = gdpLabels.slice(gdpLabels.length - currentLen);
+                tbChart.update();
+            }
+
             const corrChart = chartInstances.rateDiffCorrelationChart;
             if (corrChart) {
-                // Dataset 0: Real Interest Diff
                 corrChart.data.datasets[0].data = sliceData(realInterestDiffValues, count);
-                // Dataset 1: Exchange Rate
                 corrChart.data.datasets[1].data = sliceData(exchangeRateValues, count);
-                
-                // Labels (Exchange Rate Labels)
                 const dataLen = corrChart.data.datasets[1].data.length;
                 corrChart.data.labels = exchangeRateLabels.slice(exchangeRateLabels.length - dataLen);
-                
                 corrChart.update();
             }
             
-            // --- 散布図 (Scatter) のフィルタリング ---
-            // Exchange Rate Chart (Scatter part)
             const exChart = chartInstances.exchangeRateChart;
-            const exLabels = exChart.data.labels; // Already updated by updateLineChart above
+            const exLabels = exChart.data.labels; 
             const visibleExLabels = new Set(exLabels);
             exChart.data.datasets[1].data = allInterventionPoints.filter(p => visibleExLabels.has(p.x));
             exChart.update();
 
-            // GDP Chart (Scatter part)
             const gChart = chartInstances.gdpChart;
-            const gLabels = gChart.data.labels; // Already updated
+            const gLabels = gChart.data.labels; 
             const visibleGLabels = new Set(gLabels);
             gChart.data.datasets[1].data = allPolicyPoints.filter(p => visibleGLabels.has(p.x));
             gChart.update();
