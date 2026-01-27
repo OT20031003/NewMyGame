@@ -35,7 +35,7 @@ class Salary:
         self.salary = newsalary
         
     def change_salary(self, industry, price, old):
-        a = 2.0 # 産業の影響係数
+        a = 0.7 # 産業の影響係数
         b = 1.5 # 物価の影響係数
         
         ho = self.salary

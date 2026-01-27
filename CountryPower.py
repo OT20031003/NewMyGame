@@ -7,64 +7,63 @@ class CountryPower:
         
         # 初期値の設定
         # Industry と Military は蓄積型（ストック）として扱う
-        # past_power (ストック) に初期値を入れ、past (フロー/投資) は0とします
         if name == "Industry" or name == "Military":
             self.past = [0.0]
             self.past_power = [init_val]
         else:
-            # その他の要素（もしあれば）は加重平均型の初期化
+            # その他の要素
             self.past = [init_val]
             self.past_power = [init_val]
 
         self.bef = init_val
-        self.turn = 0 # save用のダミー、使わない
+        self.turn = 0 
 
     def save_list(self):
         data = [[self.name], [self.turn], self.past, [self.bef], self.past_power]
         return data
     
     def add_power(self, power, rate, turn):
-        #print(f"{self.name}, rate = {rate}, bef power = {power}")
-        power = (math.sqrt(power/ rate)) / 10**5
-        #print(f"{self.name}, rate = {rate}, aft power = {power}")
+        # 予算(power)をレート換算し、平方根をとる
+        # 値のスケールを4〜5桁に収めるため 2000 で除算（前回の調整）
+        scaled_power = (math.sqrt(power / rate)) / 2000.0
         
+        # 今回の計算前の値を保存（UI表示等のため）
         self.bef = self.caluc_power()
-        self.past.append(power)
         
+        # 投資リストに追加
+        self.past.append(scaled_power)
+        
+        # 新しい国力を計算して追加
         self.past_power.append(self.caluc_power())
         
 
     def caluc_power(self, alpha=0.7):
         """
-        指数加重を用いて国力を計算する。
-        IndustryとMilitaryは蓄積型（ストック）として計算し、成長を促す。
+        IndustryとMilitaryは蓄積型（ストック）。
+        毎ターンの投資額を積み上げつつ、序盤の急成長を抑制するリミッターを設ける。
         """
-        # --- Industry（産業）と Military（軍事）の特別処理: 蓄積型モデル ---
+        # --- Industry（産業）と Military（軍事）の特別処理 ---
         if self.name == "Industry" or self.name == "Military":
-            # 前回の国力（ストック）を取得
+            # 前回の国力（ストック）
             if len(self.past_power) > 0:
                 prev_power = self.past_power[-1]
             else:
                 prev_power = 0.0
             
             # 今回の投資（フロー）
+            # add_power内でappendされた最新の値を使用
             current_input = self.past[-1]
             
-            # 【修正変更点】
-            # 蓄積型ロジックを適用
+            # 1. 基本計算（単純加算モデル）
+            val = prev_power + current_input
             
-            # 1. 減価償却なしで単純加算
-            accumulated_power = prev_power + current_input
-            
-            # 2. 自然成長率の適用
-            # インフレで実質投資額(current_input)が増えなくても成長するようにする
-            growth_rate = 1.006
-            
-            val = accumulated_power * growth_rate
-            
-            # 単調増加保証（もし計算結果が前回を下回っても、前回値を維持）
-            if val < prev_power:
-                val = prev_power
+            # 2. 変動制限（リミッター）
+            # 最初の50ターン（初期値含めてリスト長が50以下の場合）は
+            # 成長率を前回比 +5% 以内に制限する
+            if len(self.past_power) <= 50 and prev_power > 0:
+                max_val = prev_power * 1.02
+                if val > max_val:
+                    val = max_val
             
             return val
 
@@ -72,7 +71,6 @@ class CountryPower:
         power_sum = 0.0
         wsum = 0.0
         
-        # self.past の各要素に対してループ
         for i in range(len(self.past)):
             w = (1 - alpha) ** (len(self.past) - 1 - i)
             power_sum += self.past[i] * w

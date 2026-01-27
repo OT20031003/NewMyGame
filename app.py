@@ -35,7 +35,7 @@ def initialize_world(Load):
         Country(name="Switzerland", money_name="Swissfranc", turn_year=turn_year, population_p=4.9, salary_p=0.1*3.4, initial_price=0.1*140, selfoperation=True, industry_p=7500, military_p=250),
         
         # 中国: 人口多, 物価安(1ドル=7.2元), 給与低めだが産業力最強クラス
-        Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=7.0, salary_p=0.1*5.0, initial_price=0.1*500, selfoperation=True, industry_p=100, military_p=1500),
+        Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=7.0, salary_p=0.1*1.0, initial_price=0.1*100, selfoperation=True, industry_p=200, military_p=1500),
         
         # イギリス: ポンド (1ドル=0.76ポンド想定)
         Country(name="England", money_name="Pond", turn_year=turn_year, population_p=5.66, salary_p=0.1*2.0, initial_price=0.1*70, selfoperation=True, industry_p=3500, military_p=300),
@@ -56,7 +56,7 @@ def initialize_world(Load):
         Money(name="Yen", interest=0.25, value=100.00, base_currency=False, is_major=True), # 主要通貨
         Money(name="Dollar", interest=4.5, value=1.0, base_currency=True, is_major=True),   # 基軸通貨(主要)
         Money(name="Euro", interest=3.5, value=0.92, base_currency=False, is_major=True),   # 主要通貨
-        Money(name="Yuan", interest=3.0, value=7.20, base_currency=False, is_major=False),   # 主要通貨
+        Money(name="Yuan", interest=3.0, value=10.20, base_currency=False, is_major=False),   # 主要通貨
         Money(name="Pond", interest=4.0, value=0.76, base_currency=False, is_major=True),   # 主要通貨
         Money(name="Baht", interest=2.5, value=33.0, base_currency=False, is_major=False),  # 非主要通貨
         Money(name="Swissfranc", interest=1.0, value=0.85, base_currency=False, is_major=False), # 主要通貨
