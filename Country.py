@@ -80,6 +80,9 @@ class Country:
         self.tariffs = {}
         # このターンに支払った輸入関税コスト（次ターンの物価計算に使用）
         self.turn_tariff_cost_usd = 0.0
+        
+        # === ★追加: 国別貿易収支の内訳 (This Turn) ===
+        self.trade_balance_breakdown = {}
 
     # === ログ記録用メソッド ===
     def add_log(self, turn, category, message):

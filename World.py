@@ -81,6 +81,9 @@ class World:
         
         # 1. 各国のターン進行
         for country in self.Country_list:
+            # ★追加: ターン開始時に貿易内訳をリセット
+            country.trade_balance_breakdown = {}
+
             my_money = next((m for m in self.Money_list if m.name == country.money_name), None)
             if my_money:
                 country.next_turn(my_money, my_money.get_rate(), self.turn)
@@ -175,6 +178,10 @@ class World:
                     # 貿易収支の記録
                     current_turn_trade_balance[country_a.name] += trade_volume
                     current_turn_trade_balance[country_b.name] -= trade_volume
+                    
+                    # ★追加: 国別内訳の記録 (Aはプラス, Bはマイナス)
+                    country_a.trade_balance_breakdown[country_b.name] = country_a.trade_balance_breakdown.get(country_b.name, 0.0) + trade_volume
+                    country_b.trade_balance_breakdown[country_a.name] = country_b.trade_balance_breakdown.get(country_a.name, 0.0) - trade_volume
 
                     # ★追加: B国は輸入したため、関税コストが発生
                     # 関税コスト = 輸入額(trade_volume) * 関税率(tariff_b_to_a)
@@ -189,6 +196,10 @@ class World:
                     # 貿易収支の記録
                     current_turn_trade_balance[country_a.name] -= trade_volume
                     current_turn_trade_balance[country_b.name] += trade_volume
+                    
+                    # ★追加: 国別内訳の記録 (Bはプラス, Aはマイナス)
+                    country_a.trade_balance_breakdown[country_b.name] = country_a.trade_balance_breakdown.get(country_b.name, 0.0) - trade_volume
+                    country_b.trade_balance_breakdown[country_a.name] = country_b.trade_balance_breakdown.get(country_a.name, 0.0) + trade_volume
 
                     # ★追加: A国は輸入したため、関税コストが発生
                     tariff_cost = trade_volume * tariff_a_to_b
@@ -201,6 +212,8 @@ class World:
             # 計算した貿易収支を履歴に追加
             balance = current_turn_trade_balance.get(country.name, 0.0)
             country.past_trade_balance.append(balance)
+
+        
 
         # === 4. Currency Indexの計算 (★修正: 主要通貨のみ参照) ===
         # 固定の50ではなく self.index_base_turn を使用

@@ -286,6 +286,8 @@
             
             <div class="card chart-card"><h2><i class="fas fa-ship"></i> Trade Balance History (USD)</h2><canvas id="tradeBalanceChart"></canvas></div>
             
+            <div class="card chart-card"><h2><i class="fas fa-hand-holding-usd"></i> Trade Balance Breakdown (This Turn)</h2><canvas id="tradeBreakdownChart"></canvas></div>
+
             <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> GDP History ({{ country.money_name }})</h2><canvas id="gdpChart"></canvas></div>
             
             <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Real GDP History ({{ country.money_name }}, Base=Turn 0)</h2><canvas id="realGdpChart"></canvas></div>
@@ -798,6 +800,43 @@
                         }
                     }
                 } 
+            }
+        });
+
+        // ★追加: Trade Breakdown Chart
+        const tradeBreakdownData = {{ country.trade_balance_breakdown|tojson|default({}) }};
+        const tbLabels = Object.keys(tradeBreakdownData);
+        const tbValues = Object.values(tradeBreakdownData);
+        
+        const tbColors = tbValues.map(v => v >= 0 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)');
+        const tbBorders = tbValues.map(v => v >= 0 ? '#10b981' : '#ef4444');
+
+        chartInstances.tradeBreakdownChart = new Chart(document.getElementById("tradeBreakdownChart"), {
+            type: 'bar',
+            data: {
+                labels: tbLabels,
+                datasets: [{
+                    label: 'Net Balance (USD)',
+                    data: tbValues,
+                    backgroundColor: tbColors,
+                    borderColor: tbBorders,
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                ...barChartOptions,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const val = context.raw;
+                                const sign = val > 0 ? '+' : '';
+                                return `Balance: ${sign}${val.toFixed(0)} USD`;
+                            }
+                        }
+                    }
+                }
             }
         });
 
