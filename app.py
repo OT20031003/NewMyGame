@@ -9,13 +9,13 @@ app = Flask(__name__)
 # グローバルなWorldオブジェクト
 turn_year = 3
 world = None
-# ★追加: Currency Index の基準ターン設定
+# Currency Index の基準ターン設定
 CURRENCY_INDEX_BASE_TURN = 80
 # 初期化関数
 def initialize_world(Load):
     global world
     world = World(turn_year, index_base_turn=CURRENCY_INDEX_BASE_TURN)
-    # ★修正: initial_price を追加して個別に物価レベルを設定
+    # initial_price を追加して個別に物価レベルを設定
     default_countries = [
         # 日本: 円安反映 (1ドル=150円想定)。物価15000, 給与係数150 -> 購買力維持
         Country(name="Japan", money_name="Yen", turn_year=turn_year, population_p=5.99, salary_p=0.1*140.0, initial_price=0.1*5000, selfoperation=True, industry_p=1200, military_p=200),
@@ -35,7 +35,7 @@ def initialize_world(Load):
         Country(name="Switzerland", money_name="Swissfranc", turn_year=turn_year, population_p=4.9, salary_p=0.1*3.4, initial_price=0.1*140, selfoperation=True, industry_p=7500, military_p=250),
         
         # 中国: 人口多, 物価安(1ドル=7.2元), 給与低めだが産業力最強クラス
-        Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=7.0, salary_p=0.1*1.0, initial_price=0.1*100, selfoperation=True, industry_p=200, military_p=1500),
+        Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=7.0, salary_p=0.1*1.0, initial_price=0.1*100, selfoperation=True, industry_p=2000, military_p=1500),
         
         # イギリス: ポンド (1ドル=0.76ポンド想定)
         Country(name="England", money_name="Pond", turn_year=turn_year, population_p=5.66, salary_p=0.1*2.0, initial_price=0.1*70, selfoperation=True, industry_p=3500, military_p=300),
@@ -50,13 +50,13 @@ def initialize_world(Load):
     # === 通貨の初期設定 ===
     # value は「1 USD = 何単位の通貨か」を表すレートとして設定します。
     # base_currency=True の通貨(Dollar)が基準になります。
-    # ★修正: is_major=True で主要通貨バスケットに含めるかを指定
+    # is_major=True で主要通貨バスケットに含めるかを指定
     
     default_money = [
         Money(name="Yen", interest=0.25, value=100.00, base_currency=False, is_major=True), # 主要通貨
         Money(name="Dollar", interest=4.5, value=1.0, base_currency=True, is_major=True),   # 基軸通貨(主要)
         Money(name="Euro", interest=3.5, value=0.92, base_currency=False, is_major=True),   # 主要通貨
-        Money(name="Yuan", interest=3.0, value=10.20, base_currency=False, is_major=False),   # 主要通貨
+        Money(name="Yuan", interest=3.0, value=7.20, base_currency=False, is_major=False),   # 主要通貨
         Money(name="Pond", interest=4.0, value=0.76, base_currency=False, is_major=True),   # 主要通貨
         Money(name="Baht", interest=2.5, value=33.0, base_currency=False, is_major=False),  # 非主要通貨
         Money(name="Swissfranc", interest=1.0, value=0.85, base_currency=False, is_major=False), # 主要通貨
@@ -66,7 +66,7 @@ def initialize_world(Load):
     ]
     if Load == True:
         world.load()
-        # ★追加: Load時はWorldが再作成されない場合があるので、変数を強制的にセット
+        # Load時はWorldが再作成されない場合があるので、変数を強制的にセット
         world.index_base_turn = CURRENCY_INDEX_BASE_TURN
     else :
         for money in default_money:
@@ -141,7 +141,7 @@ def advance_turn():
     interest_inputs = {}
     print(f"app.py World turn: {world.turn + 1} へ移行")
 
-    # ★変更: 各国の為替介入入力の取得と実行部分
+    # 各国の為替介入入力の取得と実行部分
     for country in world.Country_list:
         intervention_input = request.form.get(f"intervention_{country.name}")
         country.turn_intervention_usd = 0.0
@@ -153,7 +153,7 @@ def advance_turn():
                     money = next((m for m in world.Money_list if m.name == country.money_name), None)
                     if money:
                         current_rate = money.get_rate()
-                        # ★修正: 第3引数に world.turn を渡す
+                        # 第3引数に world.turn を渡す
                         country.intervene(amount_usd, current_rate, world.turn)
             except ValueError:
                 pass
@@ -179,7 +179,7 @@ def advance_turn():
         base_inflation = 0.0
         base_trade_balance_ratio = 0.0
         base_gdp_growth = 0.0
-        base_gdp_per_capita_usd = 0.0 # ★追加
+        base_gdp_per_capita_usd = 0.0 
         
         # 基軸通貨を探す
         base_money = next((m for m in world.Money_list if m.base_currency), None)
@@ -204,7 +204,7 @@ def advance_turn():
                     
                     # 実際の増減
                     actual_usd_change = c.usd - prev_usd
-                    # ★重要: 純粋な貿易収支 = 実際の増減 - 介入による増減
+                    # 純粋な貿易収支 = 実際の増減 - 介入による増減
                     # 基軸通貨国も介入する場合に備えて同じロジックを適用
                     trade_balance = actual_usd_change - getattr(c, 'turn_intervention_usd', 0.0)
                     
@@ -214,7 +214,7 @@ def advance_turn():
                 if total_gdp_usd > 0:
                     base_trade_balance_ratio = (total_trade_balance / total_gdp_usd) * 100
                     
-                # ★追加: 基軸通貨エリアの一人当たりGDP (USD)
+                # 基軸通貨エリアの一人当たりGDP (USD)
                 b_total_gdp_usd = sum(c.get_gdp_usd() for c in b_countries)
                 b_total_pop = sum(c.get_population() for c in b_countries)
                 if b_total_pop > 0:
@@ -232,15 +232,15 @@ def advance_turn():
             avg_inflation = 0.0
             avg_gdp_growth = 0.0
             area_trade_balance_ratio = 0.0
-            intervention_ratio = 0.0 # ★追加: 介入比率
-            avg_gdp_per_capita_usd = 0.0 # ★追加
+            intervention_ratio = 0.0 
+            avg_gdp_per_capita_usd = 0.0 
             
             if countries:
                 avg_inflation = sum(c.price.get_price_change_rate() for c in countries) / len(countries)
                 avg_gdp_growth = sum(c.get_gdp_change() for c in countries) / len(countries)
                 
                 total_trade_balance = 0.0
-                total_intervention_usd = 0.0 # ★追加
+                total_intervention_usd = 0.0 
                 total_gdp_usd = 0.0
                 
                 for c in countries:
@@ -248,7 +248,7 @@ def advance_turn():
                     prev_usd = c.past_usd[-2] if len(c.past_usd) >= 2 else c.usd
                     actual_usd_change = c.usd - prev_usd
                     
-                    # ★重要: 純粋な貿易収支 = 実際の増減 - 介入による増減
+                    # 純粋な貿易収支 = 実際の増減 - 介入による増減
                     # c.turn_intervention_usd はこのターンの介入額
                     current_intervention = getattr(c, 'turn_intervention_usd', 0.0)
                     trade_balance = actual_usd_change - current_intervention
@@ -259,10 +259,10 @@ def advance_turn():
                 
                 if total_gdp_usd > 0:
                     area_trade_balance_ratio = (total_trade_balance / total_gdp_usd) * 100
-                    # ★追加: 介入比率の計算 (介入額 / GDP)
+                    # 介入比率の計算 (介入額 / GDP)
                     intervention_ratio = (total_intervention_usd / total_gdp_usd) * 100
                 
-                # ★追加: 対象通貨エリアの一人当たりGDP (USD)
+                # 対象通貨エリアの一人当たりGDP (USD)
                 c_total_gdp_usd = sum(c.get_gdp_usd() for c in countries)
                 c_total_pop = sum(c.get_population() for c in countries)
                 if c_total_pop > 0:
@@ -273,13 +273,12 @@ def advance_turn():
                 # ユーザー入力がある場合
                 values = interest_inputs[money_name]
                 avg_input_interest = sum(values) / len(values)
-                # ★修正: intervention_ratio を渡す
                 money.change_interest(avg_input_interest, 
                                       avg_inflation, area_trade_balance_ratio, avg_gdp_growth,
                                       base_interest, base_inflation, base_trade_balance_ratio, base_gdp_growth,
                                       intervention_ratio=intervention_ratio,
-                                      avg_gdp_per_capita_usd=avg_gdp_per_capita_usd, # ★追加
-                                      base_gdp_per_capita_usd=base_gdp_per_capita_usd # ★追加
+                                      avg_gdp_per_capita_usd=avg_gdp_per_capita_usd, 
+                                      base_gdp_per_capita_usd=base_gdp_per_capita_usd 
                                       )
             else:
                 # 自動または維持
@@ -298,22 +297,21 @@ def advance_turn():
                         base_interest
                     )
                     
-                    # 金利を更新 (★修正: intervention_ratio を渡す)
+                    # 金利を更新
                     money.stay_interest(avg_inflation, area_trade_balance_ratio, avg_gdp_growth,
                                         base_interest, base_inflation, base_trade_balance_ratio, base_gdp_growth,
                                         new_interest=decided_interest,
                                         intervention_ratio=intervention_ratio,
-                                        avg_gdp_per_capita_usd=avg_gdp_per_capita_usd, # ★追加
-                                        base_gdp_per_capita_usd=base_gdp_per_capita_usd # ★追加
+                                        avg_gdp_per_capita_usd=avg_gdp_per_capita_usd, 
+                                        base_gdp_per_capita_usd=base_gdp_per_capita_usd 
                                         )
                 else:
                     # 自律操作でない（かつユーザー入力もない）場合は現状維持
-                    # ★修正: intervention_ratio を渡す
                     money.stay_interest(avg_inflation, area_trade_balance_ratio, avg_gdp_growth,
                                         base_interest, base_inflation, base_trade_balance_ratio, base_gdp_growth,
                                         intervention_ratio=intervention_ratio,
-                                        avg_gdp_per_capita_usd=avg_gdp_per_capita_usd, # ★追加
-                                        base_gdp_per_capita_usd=base_gdp_per_capita_usd # ★追加
+                                        avg_gdp_per_capita_usd=avg_gdp_per_capita_usd, 
+                                        base_gdp_per_capita_usd=base_gdp_per_capita_usd 
                                         )
 
     # --- 内部関数定義: 予算の適用ロジック ---
@@ -454,7 +452,7 @@ def show_country(name):
     if not target_money:
         return "Currency for country not found", 404
 
-    # ★追加: 全国のデータを集計して比較用データを作成
+    # 全国のデータを集計して比較用データを作成
     all_countries_data = {}
     for c in world.Country_list:
         # GDP History (USD)
@@ -478,7 +476,7 @@ def show_country(name):
         all_countries_data[c.name] = {
             "gdp_usd_history": gdp_usd_history,
             "gdp_per_capita_history": gdp_per_capita_history,
-            "industry_history": c.industry.past_power # ★追加: 産業力履歴
+            "industry_history": c.industry.past_power # 産業力履歴
         }
 
     # mp: 他通貨との為替レートを格納する辞書
@@ -544,10 +542,29 @@ def show_country(name):
         mp=mp,
         real_interest_diff_data=real_interest_diff_data,
         base_country_name=base_country.name if base_country else "Base",
-        # ★追加: 基準ターンをテンプレートに渡す
         index_base_turn=CURRENCY_INDEX_BASE_TURN,
-        # ★追加: 全国家データ（比較用）
         all_countries_data=all_countries_data
     )
+
+# === ★追加: 関税設定を更新するルート ===
+@app.route('/update_tariff', methods=['POST'])
+def update_tariff():
+    country_name = request.form.get('country_name')
+    target_name = request.form.get('target_name')
+    
+    try:
+        tariff_rate = float(request.form.get('tariff_rate', 0.0))
+        # %入力(0-100)を内部値(0.0-1.0)へ変換
+        tariff_rate_val = tariff_rate / 100.0
+    except ValueError:
+        tariff_rate_val = 0.0
+        
+    country = next((c for c in world.Country_list if c.name == country_name), None)
+    if country:
+        country.set_tariff(target_name, tariff_rate_val)
+        print(f"Updated Tariff: {country.name} -> {target_name} : {tariff_rate}%")
+        
+    return redirect(url_for('show_country', name=country_name))
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0')

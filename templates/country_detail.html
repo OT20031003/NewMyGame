@@ -319,6 +319,43 @@
                     </table>
                 </div>
             </div>
+
+            <div class="card table-card">
+                <h2><i class="fas fa-shield-alt"></i> Tariff Settings (Import Tax)</h2>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="text-align: left;">Target Country</th>
+                                <th>Current Rate</th>
+                                <th>New Rate (%)</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for other_name in all_countries_data.keys()|sort %}
+                                {% if other_name != country.name %}
+                                <tr>
+                                    <td style="text-align: left;">{{ other_name }}</td>
+                                    <td>{{ (country.get_tariff(other_name) * 100)|round(1) }}%</td>
+                                    <td>
+                                        <form action="{{ url_for('update_tariff') }}" method="post" style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+                                            <input type="hidden" name="country_name" value="{{ country.name }}">
+                                            <input type="hidden" name="target_name" value="{{ other_name }}">
+                                            <input type="number" name="tariff_rate" step="1" min="0" max="100" value="{{ (country.get_tariff(other_name) * 100)|int }}" style="background-color: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); color: var(--text-color); padding: 4px 8px; border-radius: 4px; width: 60px;"> %
+                                    </td>
+                                    <td>
+                                            <button type="submit" style="padding: 6px 12px; background-color: var(--primary-color); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Update</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="card table-card">
                 <h2><i class="fas fa-users"></i> Population Breakdown</h2>
                 <div class="table-container">
@@ -354,7 +391,7 @@
     </div>
 
     <script>
-        // ★追加: 比較機能用のデータと変数
+        // 比較機能用のデータと変数
         const allCountriesData = {{ all_countries_data|tojson }};
         const comparisonColors = [
             '#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#6366F1', 
@@ -383,7 +420,7 @@
         const usdHistory = {{ country.past_usd|tojson }};
         const isBaseCurrency = {{ 'true' if money.base_currency else 'false' }};
         
-        // --- ★追加: 実質GDP (Real GDP) の計算 ---
+        // --- 実質GDP (Real GDP) の計算 ---
         const realGdpValues = [];
         const basePrice = priceValues.length > 0 ? priceValues[0] : 100.0;
         const dataLen = Math.min(gdpValues.length, priceValues.length);
@@ -435,7 +472,7 @@
             else gdpPerCapitaUsdData.push(0);
         }
         
-        // --- ★追加: 貿易収支 (Trade Balance) データの読み込み ---
+        // --- 貿易収支 (Trade Balance) データの読み込み ---
         // Python側で記録されたデータをそのまま使用
         const tradeBalanceData = {{ country.past_trade_balance|tojson }};
 
@@ -643,7 +680,7 @@
             }
         });
 
-        // ★追加: 実質GDPチャート生成
+        // 実質GDPチャート生成
         chartInstances.realGdpChart = new Chart(document.getElementById("realGdpChart"), {
             type: 'line',
             data: { 
@@ -730,7 +767,7 @@
             }
         });
         
-        // --- ★追加: 貿易収支チャートの定義 ---
+        // 貿易収支チャートの定義
         chartInstances.tradeBalanceChart = new Chart(document.getElementById("tradeBalanceChart"), {
             type: 'bar', 
             data: { 
@@ -967,7 +1004,7 @@
             return dataArray.slice(dataArray.length - count);
         }
 
-        // --- ★追加: 比較機能ロジック ---
+        // --- 比較機能ロジック ---
         function toggleCountryComparison(checkbox, countryName) {
             if (checkbox.checked) {
                 activeComparisons.add(countryName);

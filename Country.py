@@ -41,9 +41,6 @@ class Country:
 
         for i in range(100):
             # Salaryの初期化
-            # Salaryクラス内の修正により、引数の price や industry の値は
-            # 初期給与の計算には使用されず、変動基準としてのみ保存される。
-            # 給与額は coef (salary_p) と年齢のみで決まる。
             s = Salary(old=i, price=current_init_price, industry=current_init_industry, init=-1, coef=salary_p)
             
             # 人口と満足度の設定
@@ -67,7 +64,7 @@ class Country:
         self.domestic_money = 0.0 # 自国通貨残高
         self.past_domestic_money = [self.domestic_money]
         
-        # ★追加: 貿易収支履歴 (初期値0)
+        # 貿易収支履歴 (初期値0)
         self.past_trade_balance = [0.0]
         
         self.price_salary = self.get_average_salary() / self.price.get_price() if self.price.get_price() > 0 else -100.0 # 物価に対する収入の比率
@@ -75,16 +72,33 @@ class Country:
         self.past_population.append(self.get_population())
         self.turn_intervention_usd = 0.0
 
-        # === ★追加: イベントログの初期化 ===
+        # === イベントログの初期化 ===
         self.event_logs = []
 
-    # === ★追加: ログ記録用メソッド ===
+        # === ★追加: 関税システム ===
+        # キー: 相手国名(str), 値: 関税率(float, 0.10=10%)
+        self.tariffs = {}
+        # このターンに支払った輸入関税コスト（次ターンの物価計算に使用）
+        self.turn_tariff_cost_usd = 0.0
+
+    # === ログ記録用メソッド ===
     def add_log(self, turn, category, message):
         self.event_logs.append({
             "turn": turn,
             "type": category,
             "message": message
         })
+
+    # === ★追加: 関税関連メソッド ===
+    def set_tariff(self, target_country_name, rate):
+        """指定した国への関税率を設定する"""
+        if rate < 0.0: rate = 0.0
+        if rate > 10.0: rate = 10.0 # 上限などのガード
+        self.tariffs[target_country_name] = rate
+
+    def get_tariff(self, target_country_name):
+        """指定した国への関税率を取得する"""
+        return self.tariffs.get(target_country_name, 0.0)
 
     def interest_decide(self, current_interest, inflation, gdp_growth, base_interest):
         if self.selfoperation == False:
@@ -383,15 +397,26 @@ class Country:
                 elif cnt == 19 + tcnt + pcnt + 2:
                     self.past_domestic_money = [float(x) for x in row]
                 
-                # ★追加: 貿易収支データの読み込み
                 elif cnt == 20 + tcnt + pcnt + 2:
                     self.past_trade_balance = [float(x) for x in row]
                 
+                # ★追加: 関税データの読み込み
+                elif cnt == 21 + tcnt + pcnt + 2:
+                    # 形式: target_country, rate, target_country, rate...
+                    self.tariffs = {}
+                    for i in range(0, len(row), 2):
+                        if i+1 < len(row):
+                            self.tariffs[row[i]] = float(row[i+1])
+
                 cnt += 1
             
-            # ★追加: 古いセーブデータ対策（データがない場合は0で埋める）
+            # 古いセーブデータ対策
             if not hasattr(self, 'past_trade_balance'):
                 self.past_trade_balance = [0.0] * len(self.past_gdp)
+            if not hasattr(self, 'tariffs'):
+                self.tariffs = {}
+            if not hasattr(self, 'turn_tariff_cost_usd'):
+                self.turn_tariff_cost_usd = 0.0
 
     def save_country(self):
         data = [[self.name,self.turn_year,self.money_name,
@@ -429,8 +454,15 @@ class Country:
         data.append(self.past_population)
         data.append(self.past_domestic_money)
         
-        # ★追加: 貿易収支データの保存
         data.append(self.past_trade_balance)
+        
+        # ★追加: 関税データの保存
+        # 1行に平坦化して保存
+        tf_row = []
+        for target, rate in self.tariffs.items():
+            tf_row.append(target)
+            tf_row.append(rate)
+        data.append(tf_row)
         
         with open(f'{self.name}.csv', 'w', newline='', encoding='utf-8') as file: 
             writer = csv.writer(file)
@@ -596,6 +628,27 @@ class Country:
         if prev_rate_val > 0.0001:
             exchange_change = (current_rate_val - prev_rate_val) / prev_rate_val * 100.0
         exchange_change = max(-15.0, min(15.0, exchange_change))
+
+        # === ★追加: 関税コストによるインフレ圧力 ===
+        # 輸入関税コスト / GDP (USDベース) を計算し、それを物価上昇圧力として加算
+        # exchange_change（正の値で自国通貨安＝輸入物価上昇）に上乗せして擬似的に表現する
+        tariff_inflation_pressure = 0.0
+        if self.gdp_usd > 0:
+            tariff_ratio = self.turn_tariff_cost_usd / self.gdp_usd
+            # 係数 100.0 で % 表記へ変換。さらに係数を掛けてインパクト調整してもよい。
+            # ここではシンプルに、コスト比率10%なら物価が10%上がる圧力となると仮定。
+            tariff_inflation_pressure = tariff_ratio * 1000.0
+        
+        # 圧力を適用
+        exchange_change += tariff_inflation_pressure
+
+        # ログ出力（デバッグ用）
+        if tariff_inflation_pressure > 0.1:
+            print(f"[{self.name}] Tariff Cost: {self.turn_tariff_cost_usd:.1f} USD, Inflation Pressure: +{tariff_inflation_pressure:.2f}%")
+
+        # 計算が終わったら累積コストをリセット（次の貿易フェーズで再計算されるため）
+        self.turn_tariff_cost_usd = 0.0
+        # ===============================================
 
         try:
             interest_val = money.get_true_interest()

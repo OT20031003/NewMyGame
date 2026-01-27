@@ -85,7 +85,7 @@ class World:
             if my_money:
                 country.next_turn(my_money, my_money.get_rate(), self.turn)
         
-        # ★追加: このターンの貿易収支を一時記録する辞書を作成
+        # このターンの貿易収支を一時記録する辞書を作成
         current_turn_trade_balance = {c.name: 0.0 for c in self.Country_list}
 
         # 2. 国際貿易
@@ -110,7 +110,7 @@ class World:
                 price_b = max(0.01, country_b.price.get_price() / (rate_b + 0.00001))
                 gdp_b = max(0.0, country_b.get_gdp_usd())
 
-                # === 【重要修正】競争力の計算 ===
+                # === 【重要修正】関税を考慮した競争力の計算 ===
                 price_sensitivity = 1.0
                 bonus_a = 1.0
                 bonus_b = 1.0
@@ -118,14 +118,26 @@ class World:
                 if money_a and money_a.base_currency: bonus_a *= 1.2
                 if money_b and money_b.base_currency: bonus_b *= 1.2
 
+                # --- 関税の適用 (Effective Priceの計算) ---
+                # B国市場で売るA国製品の価格 = A国価格 * (1 + B国がA国にかける関税)
+                tariff_b_to_a = country_b.get_tariff(country_a.name)
+                eff_price_a_in_b = price_a * (1.0 + tariff_b_to_a)
+
+                # A国市場で売るB国製品の価格 = B国価格 * (1 + A国がB国にかける関税)
+                tariff_a_to_b = country_a.get_tariff(country_b.name)
+                eff_price_b_in_a = price_b * (1.0 + tariff_a_to_b)
+
                 eff_industry_a = industry_a * bonus_a
                 eff_industry_b = industry_b * bonus_b
 
-                if price_a < price_b:
-                    ratio = price_b / price_a
+                # 価格競争力の比較（実効価格を使用）
+                if eff_price_a_in_b < eff_price_b_in_a:
+                    # Aの方が安い
+                    ratio = eff_price_b_in_a / eff_price_a_in_b
                     eff_industry_a *= pow(ratio, price_sensitivity)
                 else:
-                    ratio = price_a / price_b
+                    # Bの方が安い
+                    ratio = eff_price_a_in_b / eff_price_b_in_a
                     eff_industry_b *= pow(ratio, price_sensitivity)
 
                 trade_scale = (gdp_a + gdp_b) / 2.0
@@ -154,32 +166,44 @@ class World:
                     else:
                         trade_volume = int(trade_volume * max(0.5, 1.0 / (mil_ratio + 0.0001)))
 
-                # --- 富の移動 ---
+                # --- 富の移動と関税コストの集計 ---
                 if is_a_winner:
+                    # Aが輸出 (Bが輸入)
                     country_a.usd += trade_volume
                     country_b.usd -= trade_volume
                     
-                    # ★追加: 貿易収支の記録
+                    # 貿易収支の記録
                     current_turn_trade_balance[country_a.name] += trade_volume
                     current_turn_trade_balance[country_b.name] -= trade_volume
+
+                    # ★追加: B国は輸入したため、関税コストが発生
+                    # 関税コスト = 輸入額(trade_volume) * 関税率(tariff_b_to_a)
+                    tariff_cost = trade_volume * tariff_b_to_a
+                    country_b.turn_tariff_cost_usd += tariff_cost
+
                 else:
+                    # Bが輸出 (Aが輸入)
                     country_a.usd -= trade_volume
                     country_b.usd += trade_volume
                     
-                    # ★追加: 貿易収支の記録
+                    # 貿易収支の記録
                     current_turn_trade_balance[country_a.name] -= trade_volume
                     current_turn_trade_balance[country_b.name] += trade_volume
+
+                    # ★追加: A国は輸入したため、関税コストが発生
+                    tariff_cost = trade_volume * tariff_a_to_b
+                    country_a.turn_tariff_cost_usd += tariff_cost
 
         # 3. 履歴の更新
         for country in self.Country_list:
             country.past_usd.append(country.usd)
             
-            # ★追加: 計算した貿易収支を履歴に追加
+            # 計算した貿易収支を履歴に追加
             balance = current_turn_trade_balance.get(country.name, 0.0)
             country.past_trade_balance.append(balance)
 
         # === 4. Currency Indexの計算 (★修正: 主要通貨のみ参照) ===
-        # ★修正: 固定の50ではなく self.index_base_turn を使用
+        # 固定の50ではなく self.index_base_turn を使用
         # 基準ターンで基準レートをスナップショット
         if self.turn == self.index_base_turn:
             for m in self.Money_list:
@@ -193,7 +217,7 @@ class World:
 
             if base_money and non_base_monies:
                 # --- Dollar Index (Base Currency Index) の計算 ---
-                # ★修正: is_major=True の通貨のみをバスケットに入れる
+                # is_major=True の通貨のみをバスケットに入れる
                 major_basket = [m for m in non_base_monies if m.is_major]
                 
                 ratios = []
