@@ -32,7 +32,7 @@ def initialize_world(Load):
         Country(name="Germany", money_name="Euro", turn_year=turn_year, population_p=5.9, salary_p=0.1*2.6, initial_price=0.1*95, selfoperation=True, industry_p=5000, military_p=250),
         
         # スイス
-        Country(name="Switzerland", money_name="Swissfranc", turn_year=turn_year, population_p=4.9, salary_p=0.1*3.4, initial_price=0.1*140, selfoperation=True, industry_p=7500, military_p=250),
+        #Country(name="Switzerland", money_name="Swissfranc", turn_year=turn_year, population_p=4.9, salary_p=0.1*3.4, initial_price=0.1*140, selfoperation=True, industry_p=7500, military_p=250),
         
         # 中国: 人口多, 物価安(1ドル=7.2元), 給与低めだが産業力最強クラス
         Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=7.0, salary_p=0.1*1.0, initial_price=0.1*100, selfoperation=True, industry_p=2000, military_p=1500),

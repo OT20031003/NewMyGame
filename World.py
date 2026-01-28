@@ -79,9 +79,13 @@ class World:
     def Next_turn(self):
         self.turn += 1
         
+        # ★追加: AIによる関税率の自動更新 (前ターンのデータを使うため、リセット前に実行)
+        for country in self.Country_list:
+            country.decide_and_update_tariffs(self.Country_list)
+
         # 1. 各国のターン進行
         for country in self.Country_list:
-            # ★追加: ターン開始時に貿易内訳をリセット
+            # ターン開始時に貿易内訳をリセット (AI判断が終わった後で行う)
             country.trade_balance_breakdown = {}
 
             my_money = next((m for m in self.Money_list if m.name == country.money_name), None)
@@ -91,6 +95,7 @@ class World:
         # このターンの貿易収支を一時記録する辞書を作成
         current_turn_trade_balance = {c.name: 0.0 for c in self.Country_list}
 
+        
         # 2. 国際貿易
         for i in range(len(self.Country_list)-1):
             country_a = self.Country_list[i]

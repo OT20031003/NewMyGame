@@ -107,14 +107,104 @@ class Country:
         if self.selfoperation == False:
             raise NotImplementedError("This method should be implemented in a subclass or set selfoperation to True.")
         
-        target_real_rate = 2.0 
-        new_interest = inflation + target_real_rate
+        # === インフレ率 0%〜5% 死守アルゴリズム ===
         
+        # 1. 目標設定
+        target_inflation = 2.5  # ターゲットは範囲の中央 (2.5%)
+        neutral_real_rate = 2.0  # 平常時の適正な実質金利 (2.0%)
+        
+        # 2. インフレギャップの計算 (目標値からの乖離)
+        gap = inflation - target_inflation
+        
+        # 3. 反応係数の決定
+        # 0%〜5% の範囲外に出てしまった場合は、係数を大きくして強力に引き戻す
+        if inflation < 0.0 or inflation > 5.0:
+            response_coef = 3.0 # 緊急モード: 乖離の3倍の強度で金利を動かす
+        else:
+            response_coef = 1.5 # 通常モード: 乖離の1.5倍 (標準的なテイラールールより少し強め)
+
+        # 4. 最適金利の算出 (修正テイラー・ルール)
+        # 新金利 = 現在のインフレ率 + 実質金利 + (インフレギャップ × 係数)
+        # これにより、インフレが高いと「実質金利」が自動的に高くなり、引き締め効果が生まれる
+        optimal_interest = inflation + neutral_real_rate + (gap * response_coef)
+        
+        # 5. 平滑化 (急激な乱高下を防ぐため、現在の金利からの変化幅を制限)
+        # ただし「死守」するため、ある程度大きな変動(±5.0%)は許容する
+        max_change = 5.0
+        change = optimal_interest - current_interest
+        change = max(-max_change, min(max_change, change))
+        
+        new_interest = current_interest + change
+        
+        # 6. システム上の限界値ガード
         if new_interest < -10.0: new_interest = -10.0
-        if new_interest > 50.0: new_interest = 50.0
+        if new_interest > 100.0: new_interest = 100.0
             
         return new_interest
-        
+    
+    # === ★追加: AI関税自動設定ロジック ===
+    def decide_and_update_tariffs(self, world_country_list):
+        """
+        AIが貿易収支と産業力を基準に関税率を決定・更新する
+        条件: 変動幅 max ±5.0%, 範囲 0.0% - 75.0%
+        """
+        # 自律操作オフなら何もしない
+        if not self.selfoperation:
+            return
+
+        # 基準となるGDP (USDベース)
+        my_gdp = max(1.0, self.gdp_usd) # ゼロ除算防止
+
+        for opponent in world_country_list:
+            if opponent.name == self.name:
+                continue
+
+            # 現在の関税率を取得
+            current_tariff = self.get_tariff(opponent.name)
+            
+            # 変更圧力を計算する変数 (プラスなら引き上げ、マイナスなら引き下げ)
+            pressure = 0.0
+
+            # --- 基準1: 貿易赤字是正 (Trade Deficit Correction) ---
+            # 前ターンの収支 (プラスは黒字、マイナスは赤字)
+            balance = self.trade_balance_breakdown.get(opponent.name, 0.0)
+            
+            # 対GDP比の赤字率 (マイナス値なら赤字)
+            deficit_ratio = balance / my_gdp
+
+            if deficit_ratio < -0.005: 
+                # 赤字がGDPの0.5%を超えたら関税引き上げ圧力
+                pressure += 0.02
+            elif deficit_ratio < -0.02:
+                # 赤字がGDPの2.0%を超えたら強力に引き上げ
+                pressure += 0.04
+            elif deficit_ratio > 0.01:
+                # 黒字がGDPの1.0%を超えていれば、余裕があるので少し下げる（貿易摩擦緩和）
+                pressure -= 0.01
+
+            # --- 基準2: 産業保護 (Industry Protection) ---
+            my_ind = self.industry.caluc_power()
+            op_ind = opponent.industry.caluc_power()
+
+            if op_ind > my_ind * 1.5*2:
+                # 相手の産業力が自国の1.5倍以上なら保護が必要
+                pressure += 0.02
+            elif op_ind > my_ind * 3.0*2:
+                # 3倍以上の圧倒的差ならさらに保護
+                pressure += 0.03
+            
+            # --- 平滑化と制限 (Smoothing & Limits) ---
+            # 1ターンあたりの変動幅を ±5.0% (0.05) に制限
+            change = max(-0.05, min(0.03, pressure))
+            
+            new_tariff = current_tariff + change
+
+            # 関税率の全体キャップ (0.0% ～ 75.0%)
+            new_tariff = max(0.0, min(0.99, new_tariff))
+            
+            # 設定反映
+            self.set_tariff(opponent.name, new_tariff)
+     
     def intervene(self, amount_usd, current_rate, turn):
         required_domestic = amount_usd * current_rate
         if amount_usd > 0:
@@ -640,7 +730,7 @@ class Country:
             tariff_ratio = self.turn_tariff_cost_usd / self.gdp_usd
             # 係数 100.0 で % 表記へ変換。さらに係数を掛けてインパクト調整してもよい。
             # ここではシンプルに、コスト比率10%なら物価が10%上がる圧力となると仮定。
-            tariff_inflation_pressure = tariff_ratio * 1000.0
+            tariff_inflation_pressure = tariff_ratio * 100.0
         
         # 圧力を適用
         exchange_change += tariff_inflation_pressure

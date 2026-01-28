@@ -46,7 +46,7 @@ class Price:
 
         # B. 移動平均処理
         # 前回のインフレ率(prev_inflation)を多く残し、新しい理論値の変化を少しだけ反映させる
-        smoothing_factor = 0.4  # 0.1〜0.3推奨。小さいほどグラフの線が滑らかになります
+        smoothing_factor = 0.2  # 0.1〜0.3推奨。小さいほどグラフの線が滑らかになります
         
         new_inflation = (prev_inflation * (1 - smoothing_factor)) + \
                         (calculated_raw_inflation * smoothing_factor)
