@@ -344,7 +344,7 @@
                                         <form action="{{ url_for('update_tariff') }}" method="post" style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
                                             <input type="hidden" name="country_name" value="{{ country.name }}">
                                             <input type="hidden" name="target_name" value="{{ other_name }}">
-                                            <input type="number" name="tariff_rate" step="1" min="0" max="100" value="{{ (country.get_tariff(other_name) * 100)|int }}" style="background-color: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); color: var(--text-color); padding: 4px 8px; border-radius: 4px; width: 60px;"> %
+                                            <input type="number" name="tariff_rate" step="1" min="0" max="10000" value="{{ (country.get_tariff(other_name) * 100)|int }}" style="background-color: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); color: var(--text-color); padding: 4px 8px; border-radius: 4px; width: 60px;"> %
                                     </td>
                                     <td>
                                             <button type="submit" style="padding: 6px 12px; background-color: var(--primary-color); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Update</button>

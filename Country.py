@@ -195,12 +195,12 @@ class Country:
             
             # --- 平滑化と制限 (Smoothing & Limits) ---
             # 1ターンあたりの変動幅を ±5.0% (0.05) に制限
-            change = max(-0.05, min(0.03, pressure))
+            change = max(-0.30, min(0.30, pressure))
             
             new_tariff = current_tariff + change
 
             # 関税率の全体キャップ (0.0% ～ 75.0%)
-            new_tariff = max(0.0, min(0.99, new_tariff))
+            new_tariff = max(0.0, min(9.9, new_tariff))
             
             # 設定反映
             self.set_tariff(opponent.name, new_tariff)

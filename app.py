@@ -32,19 +32,19 @@ def initialize_world(Load):
         Country(name="Germany", money_name="Euro", turn_year=turn_year, population_p=5.9, salary_p=0.1*2.6, initial_price=0.1*95, selfoperation=True, industry_p=5000, military_p=250),
         
         # スイス
-        #Country(name="Switzerland", money_name="Swissfranc", turn_year=turn_year, population_p=4.9, salary_p=0.1*3.4, initial_price=0.1*140, selfoperation=True, industry_p=7500, military_p=250),
+        Country(name="Switzerland", money_name="Swissfranc", turn_year=turn_year, population_p=4.9, salary_p=0.1*3.4, initial_price=0.1*140, selfoperation=True, industry_p=7500, military_p=250),
         
         # 中国: 人口多, 物価安(1ドル=7.2元), 給与低めだが産業力最強クラス
-        Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=7.0, salary_p=0.1*1.0, initial_price=0.1*100, selfoperation=True, industry_p=2000, military_p=1500),
+        Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=7.0, salary_p=0.1*1.0, initial_price=0.1*100, selfoperation=True, industry_p=1000, military_p=10),
         
         # イギリス: ポンド (1ドル=0.76ポンド想定)
         Country(name="England", money_name="Pond", turn_year=turn_year, population_p=5.66, salary_p=0.1*2.0, initial_price=0.1*70, selfoperation=True, industry_p=3500, military_p=300),
         
-        Country(name="Russia", money_name="Ruble", turn_year=turn_year, population_p=6.10, salary_p=0.1*75.0, initial_price=0.1*4200, selfoperation=True, industry_p=500, military_p=1500),
+        Country(name="Russia", money_name="Ruble", turn_year=turn_year, population_p=6.10, salary_p=0.1*75.0, initial_price=0.1*4200, selfoperation=True, industry_p=500, military_p=150),
         Country(name="Spain", money_name="Euro", turn_year=turn_year, population_p=5.66, salary_p=0.1*1.5, initial_price=0.1*60, selfoperation=True, industry_p=2900, military_p=400),
         
         # タイ: 新興国モデル (1ドル=33バーツ), 産業成長中
-        Country(name="Thailand", money_name="Baht", turn_year=turn_year, population_p=5.7, salary_p=0.1*15.0, initial_price=0.1*500, selfoperation=True, industry_p=300, military_p=100)
+        Country(name="Thailand", money_name="Baht", turn_year=turn_year, population_p=5.7, salary_p=0.1*15.0, initial_price=0.1*500, selfoperation=True, industry_p=500, military_p=10)
     ]
     
     # === 通貨の初期設定 ===
@@ -62,7 +62,8 @@ def initialize_world(Load):
         Money(name="Swissfranc", interest=1.0, value=0.85, base_currency=False, is_major=False), # 主要通貨
         Money(name="CanadaDollar", interest=3.0, value=1.36, base_currency=False, is_major=False), # 主要通貨
         Money(name="AustraliaDollar", interest=3.0, value=1.50, base_currency=False, is_major=False), # 主要通貨
-        Money(name="Ruble", interest=15.0, value=92.0, base_currency=False, is_major=False)  # 非主要通貨
+        Money(name="Ruble", interest=15.0, value=92.0, base_currency=False, is_major=False),  # 非主要通貨
+        Money(name="Gold", interest=5.0, value=1.0, base_currency=False, is_major=False)  # 非主要通貨
     ]
     if Load == True:
         world.load()
