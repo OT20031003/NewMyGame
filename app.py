@@ -18,24 +18,24 @@ def initialize_world(Load):
     # initial_price を追加して個別に物価レベルを設定
     default_countries = [
         # 日本: 円安反映 (1ドル=150円想定)。物価15000, 給与係数150 -> 購買力維持
-        Country(name="Japan", money_name="Yen", turn_year=turn_year, population_p=5.99, salary_p=0.1*140.0, initial_price=0.1*5000, selfoperation=True, industry_p=1200, military_p=200),
+        Country(name="Japan", money_name="Yen", turn_year=turn_year, population_p=5.90, salary_p=0.1*140.0, initial_price=0.1*7000, selfoperation=True, industry_p=1200, military_p=200),
         
         # アメリカ: 基軸 (基準値)。物価100, 給与係数1.0
         Country(name="USA", money_name="Dollar", turn_year=turn_year, population_p=6.3, salary_p=0.1*2.4, initial_price=0.1*100, selfoperation=True, industry_p=2100, military_p=2000),
         
         # フランス: ユーロ (1ドル=0.92ユーロ想定)。物価95, 給与0.95
-        Country(name="France", money_name="Euro", turn_year=turn_year, population_p=5.75, salary_p=0.1*2.1, initial_price=0.1*80, selfoperation=True, industry_p=3000, military_p=300),
+        Country(name="France", money_name="Euro", turn_year=turn_year, population_p=5.75, salary_p=0.1*2.1, initial_price=0.1*80, selfoperation=True, industry_p=5500, military_p=300),
         
-        Country(name="Itary", money_name="Euro", turn_year=turn_year, population_p=5.70, salary_p=0.1*1.5, initial_price=0.1*60, selfoperation=True, industry_p=3000, military_p=300),
+        Country(name="Itary", money_name="Euro", turn_year=turn_year, population_p=5.70, salary_p=0.1*1.5, initial_price=0.1*60, selfoperation=True, industry_p=5500, military_p=300),
         
         # ドイツ: 産業強め
-        Country(name="Germany", money_name="Euro", turn_year=turn_year, population_p=5.9, salary_p=0.1*2.6, initial_price=0.1*95, selfoperation=True, industry_p=5000, military_p=250),
+        Country(name="Germany", money_name="Euro", turn_year=turn_year, population_p=5.9, salary_p=0.1*2.6, initial_price=0.1*95, selfoperation=True, industry_p=6000, military_p=250),
         
-        # スイス
+        # スイス Swissfranc
         Country(name="Switzerland", money_name="Swissfranc", turn_year=turn_year, population_p=4.9, salary_p=0.1*3.4, initial_price=0.1*140, selfoperation=True, industry_p=7500, military_p=250),
         
         # 中国: 人口多, 物価安(1ドル=7.2元), 給与低めだが産業力最強クラス
-        Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=7.0, salary_p=0.1*1.0, initial_price=0.1*100, selfoperation=True, industry_p=1000, military_p=10),
+        Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=6.5, salary_p=0.1*1.0, initial_price=0.1*400, selfoperation=True, industry_p=1000, military_p=10),
         
         # イギリス: ポンド (1ドル=0.76ポンド想定)
         Country(name="England", money_name="Pond", turn_year=turn_year, population_p=5.66, salary_p=0.1*2.0, initial_price=0.1*70, selfoperation=True, industry_p=3500, military_p=300),
@@ -44,7 +44,7 @@ def initialize_world(Load):
         Country(name="Spain", money_name="Euro", turn_year=turn_year, population_p=5.66, salary_p=0.1*1.5, initial_price=0.1*60, selfoperation=True, industry_p=2900, military_p=400),
         
         # タイ: 新興国モデル (1ドル=33バーツ), 産業成長中
-        Country(name="Thailand", money_name="Baht", turn_year=turn_year, population_p=5.7, salary_p=0.1*15.0, initial_price=0.1*500, selfoperation=True, industry_p=500, military_p=10)
+        Country(name="Thailand", money_name="Baht", turn_year=turn_year, population_p=5.7, salary_p=0.1*5.0, initial_price=0.1*500, selfoperation=True, industry_p=500, military_p=10)
     ]
     
     # === 通貨の初期設定 ===
@@ -53,7 +53,7 @@ def initialize_world(Load):
     # is_major=True で主要通貨バスケットに含めるかを指定
     
     default_money = [
-        Money(name="Yen", interest=0.25, value=100.00, base_currency=False, is_major=True), # 主要通貨
+        Money(name="Yen", interest=0.25, value=120.00, base_currency=False, is_major=True), # 主要通貨
         Money(name="Dollar", interest=4.5, value=1.0, base_currency=True, is_major=True),   # 基軸通貨(主要)
         Money(name="Euro", interest=3.5, value=0.92, base_currency=False, is_major=True),   # 主要通貨
         Money(name="Yuan", interest=3.0, value=7.20, base_currency=False, is_major=False),   # 主要通貨

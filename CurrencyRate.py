@@ -43,11 +43,11 @@ class CurrencyRate:
         real_interest_diff = real_interest - base_real_interest
         
         # 金利への感応度 (係数 0.10)
-        interest_effect = math.tanh(real_interest_diff * 0.2) * 0.10
+        interest_effect = math.tanh(real_interest_diff * 0.2) * 0.17
 
         # --- 3. 貿易収支 (Trade Balance) ---
         trade_diff = trade_balance_ratio - base_trade_balance_ratio
-        trade_effect = math.tanh(trade_diff * 2.0) * 0.05
+        trade_effect = math.tanh(trade_diff * 2.0) * 0.07
 
         # --- 4. 経済成長率 (Real GDP Growth) ---
         # 【重要】名目成長率(gdp_growth)からインフレ率を引いて「実質成長率」にする
@@ -58,8 +58,8 @@ class CurrencyRate:
         real_growth_diff = real_gdp_growth - base_real_gdp_growth
         
         # 実質成長率が高いなら通貨高要因
-        growth_effect = math.tanh(real_growth_diff * 0.1) * 0.10
-
+        growth_effect = math.tanh(real_growth_diff * 0.1) * 0.01
+        # growth_effect = math.tanh(real_growth_diff * 0.1) * 0.10
         # --- 5. 為替介入 (Intervention) ---
         # 介入比率に応じてレートを動かす
         # プラス（ドル買い・自国売り）なら、レート上昇（通貨安）要因
