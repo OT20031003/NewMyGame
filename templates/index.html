@@ -853,6 +853,26 @@
                 legend: { 
                     position: 'right', 
                     labels: { boxWidth: 12, padding: 15, color: '#94a3b8' } 
+                },
+                // ★追加: ツールチップの設定
+                tooltip: {
+                    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                    titleColor: '#f8fafc',
+                    bodyColor: '#cbd5e1',
+                    padding: 12,
+                    cornerRadius: 8,
+                    callbacks: {
+                        label: function(context) {
+                            // その国のGDP値を取得
+                            let value = context.raw;
+                            // 全国のGDP合計を計算
+                            let total = context.dataset.data.reduce((acc, current) => acc + current, 0);
+                            // パーセンテージを計算（小数点第1位まで表示）
+                            let percentage = ((value / total) * 100).toFixed(1) + '%';
+                            
+                            return 'Share: ' + percentage;
+                        }
+                    }
                 }
             },
             layout: { padding: 20 }

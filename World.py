@@ -91,7 +91,54 @@ class World:
             my_money = next((m for m in self.Money_list if m.name == country.money_name), None)
             if my_money:
                 country.next_turn(my_money, my_money.get_rate(), self.turn)
+
+        # ====== ★追加: 同じ通貨圏のインフレ率を連動（GDP加重平均） ======
+        sync_strength = 0.6  # 連動の強さ（0.0で連動なし、1.0で完全一致）
+        currency_groups = {}
         
+        # 通貨ごとに国をグループ化
+        for country in self.Country_list:
+            if country.money_name not in currency_groups:
+                currency_groups[country.money_name] = []
+            currency_groups[country.money_name].append(country)
+
+        # グループごとにインフレ率を調整
+        for money_name, group in currency_groups.items():
+            if len(group) > 1: # 同じ通貨を使う国が複数いる場合のみ処理
+                total_weight = 0.0
+                weighted_inflation_sum = 0.0
+                
+                # 通貨圏全体のGDPと、加重インフレ率の合計を計算
+                for c in group:
+                    gdp = max(0.01, c.get_gdp_usd()) # ゼロ除算防止
+                    
+                    # ★変更: 単純なGDPではなく、GDPの2乗（あるいは1.5乗など）を重みにする
+                    # これにより、GDPが突出している国(USAなど)の影響力が圧倒的になります。
+                    # もしこれでも足りなければ `** 3.0` にすると完全なる覇権状態になります。
+                    weight = gdp ** 2.0 
+                    
+                    total_weight += weight
+                    weighted_inflation_sum += c.price.current_inflation * weight
+
+                # 圧倒的影響力を持たせた加重平均インフレ率の算出
+                avg_inflation = weighted_inflation_sum / total_weight
+
+                # 各国のインフレ率を平均値に平滑化
+                for c in group:
+                    current_inf = c.price.current_inflation
+                    synced_inf = (current_inf * (1.0 - sync_strength)) + (avg_inflation * sync_strength)
+                    
+                    # 1. インフレ率の変数を更新
+                    c.price.current_inflation = synced_inf
+                    
+                    # 2. 既に計算・追加されてしまった「今ターンの物価」を再計算して上書き
+                    if len(c.price.past_price) >= 2:
+                        prev_price = c.price.past_price[-2] # 1ターン前の物価
+                        # 連動後のインフレ率を使って今ターンの物価を出し直す
+                        corrected_price = max(0.01, prev_price * (1.0 + synced_inf))
+                        c.price.past_price[-1] = corrected_price # 履歴の最後（今ターン）を上書き
+        # ================================================================
+
         # このターンの貿易収支を一時記録する辞書を作成
         current_turn_trade_balance = {c.name: 0.0 for c in self.Country_list}
 
