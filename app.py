@@ -117,6 +117,7 @@ def ensure_world_initialized():
 
 @app.route('/index')
 def index():
+    saved = request.args.get('saved') == '1'
     money_dict = {money.name: money for money in world.Money_list}
     processed_countries = []
     for country in world.Country_list:
@@ -149,7 +150,8 @@ def index():
         moneys=world.Money_list,
         turn=world.turn,
         turn_year=turn_year, 
-        rate_dict = dict
+        rate_dict = dict,
+        saved=saved
     )
 def bernoulli(p: float) -> bool:
     """確率pでTrueを返す"""
@@ -449,7 +451,7 @@ def submit_budget():
 @app.route('/quit')
 def quit():
     world.save()
-    return redirect(url_for('index'))
+    return redirect(url_for('index', saved='1'))
     
     
     

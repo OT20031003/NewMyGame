@@ -261,7 +261,13 @@
 
         <div class="main-grid">
             <div class="card table-card" style="grid-column: span 2;">
-                <h2><i class="fas fa-clipboard-list"></i> Policy & Event Log</h2>
+                <h2 style="display: flex; justify-content: space-between; align-items: center;">
+                    <span><i class="fas fa-clipboard-list"></i> Policy & Event Log</span>
+                    <label style="font-size: 0.9rem; color: var(--text-muted-color); display: inline-flex; align-items: center; gap: 0.4rem;">
+                        <input id="toggleGdpEventPlot" type="checkbox" checked style="accent-color: var(--accent-color);">
+                        Plot on GDP
+                    </label>
+                </h2>
                 <div class="table-container" style="max-height: 300px;">
                     <table>
                         <thead>
@@ -486,9 +492,10 @@
                 let badgeClass = 'pill-change';
                 if (log.type === 'Intervention') badgeClass += ' pill-negative';
                 else if (log.type === 'Fiscal Policy' || log.type === 'Tax Change') badgeClass += ' pill-positive';
+                const turnIndex = Number.isFinite(Number(log.turn)) ? Math.max(0, Math.floor(Number(log.turn))) : 0;
                 
                 row.innerHTML = `
-                    <td style="text-align: center; font-family: 'JetBrains Mono';">${log.turn}</td>
+                    <td style="text-align: center; font-family: 'JetBrains Mono';">${turnIndex + 1}</td>
                     <td><span class="${badgeClass}">${log.type}</span></td>
                     <td style="text-align: left;">${log.message}</td>
                 `;
@@ -501,19 +508,38 @@
 
         const allInterventionPoints = eventLogs
             .filter(e => e.type === 'Intervention')
-            .map(e => ({
-                x: `Turn ${e.turn}`,
-                y: exchangeRateValues[e.turn] || exchangeRateValues[exchangeRateValues.length-1],
-                description: e.message
-            }));
+            .map(e => {
+                const turnIndex = Number.isFinite(Number(e.turn)) ? Math.max(0, Math.floor(Number(e.turn))) : -1;
+                const y = (turnIndex >= 0 && turnIndex < exchangeRateValues.length)
+                    ? exchangeRateValues[turnIndex]
+                    : exchangeRateValues[exchangeRateValues.length - 1];
+                return {
+                    turnIndex: turnIndex,
+                    x: `Turn ${turnIndex}`,
+                    y: y,
+                    description: e.message
+                };
+            })
+            .filter(p => p.turnIndex >= 0 && Number.isFinite(p.y));
 
+        // GDPチャートのラベルは Turn 1 始まりなので、イベントturn(0始まりインデックス)を +1 して合わせる
         const allPolicyPoints = eventLogs
             .filter(e => e.type === 'Fiscal Policy' || e.type === 'Tax Change')
-            .map(e => ({
-                x: `Turn ${e.turn}`,
-                y: gdpValues[e.turn] || gdpValues[gdpValues.length-1], 
-                description: e.message
-            }));
+            .map(e => {
+                const turnIndex = Number.isFinite(Number(e.turn)) ? Math.max(0, Math.floor(Number(e.turn))) : -1;
+                const y = (turnIndex >= 0 && turnIndex < gdpValues.length)
+                    ? gdpValues[turnIndex]
+                    : gdpValues[gdpValues.length - 1];
+                return {
+                    turnIndex: turnIndex,
+                    x: `Turn ${turnIndex + 1}`,
+                    y: y,
+                    description: e.message
+                };
+            })
+            .filter(p => p.turnIndex >= 0 && Number.isFinite(p.y));
+
+        let isGdpEventPlotEnabled = true;
 
         Chart.defaults.color = 'white';
         Chart.defaults.borderColor = '#4a5568';
@@ -681,6 +707,25 @@
                 } 
             }
         });
+
+        function applyGdpPolicyOverlay(shouldUpdate = true) {
+            const gChart = chartInstances.gdpChart;
+            if (!gChart || !gChart.data.datasets[1]) return;
+
+            const overlayDs = gChart.data.datasets[1];
+            if (!isGdpEventPlotEnabled) {
+                overlayDs.hidden = true;
+                overlayDs.data = [];
+            } else {
+                overlayDs.hidden = false;
+                const visibleGLabels = new Set(gChart.data.labels);
+                overlayDs.data = allPolicyPoints.filter(p => visibleGLabels.has(p.x));
+            }
+
+            if (shouldUpdate) {
+                gChart.update();
+            }
+        }
 
         // 実質GDPチャート生成
         chartInstances.realGdpChart = new Chart(document.getElementById("realGdpChart"), {
@@ -1017,6 +1062,14 @@
             };
         });
 
+        const gdpEventToggle = document.getElementById('toggleGdpEventPlot');
+        if (gdpEventToggle) {
+            gdpEventToggle.addEventListener('change', () => {
+                isGdpEventPlotEnabled = gdpEventToggle.checked;
+                applyGdpPolicyOverlay(true);
+            });
+        }
+
         // --- Toggle History Logic (Last 100 Turns) ---
         let isLast100Mode = false;
         const toggleHistoryBtn = document.getElementById('toggleHistoryBtn');
@@ -1124,18 +1177,20 @@
         function updateChartsHistoryRange() {
             const count = 100;
             
-            const updateLineChart = (chart, data, labels) => {
+            const updateLineChart = (chart, data, labels, shouldUpdate = true) => {
                 if (!chart) return;
                 const mainDataset = chart.data.datasets[0];
                 mainDataset.data = sliceData(data, count);
                 const currentDataLen = mainDataset.data.length;
                 chart.data.labels = labels.slice(labels.length - currentDataLen);
-                chart.update();
+                if (shouldUpdate) {
+                    chart.update();
+                }
             };
 
             updateLineChart(chartInstances.populationHistoryChart, pastPopulationData, gdpLabels);
-            updateLineChart(chartInstances.exchangeRateChart, exchangeRateValues, exchangeRateLabels);
-            updateLineChart(chartInstances.gdpChart, gdpValues, gdpLabels);
+            updateLineChart(chartInstances.exchangeRateChart, exchangeRateValues, exchangeRateLabels, false);
+            updateLineChart(chartInstances.gdpChart, gdpValues, gdpLabels, false);
             updateLineChart(chartInstances.realGdpChart, realGdpValues, gdpLabels);
             
             // Labels for Comparison Charts
@@ -1180,10 +1235,9 @@
             exChart.update();
 
             const gChart = chartInstances.gdpChart;
-            const gLabels = gChart.data.labels; 
-            const visibleGLabels = new Set(gLabels);
-            gChart.data.datasets[1].data = allPolicyPoints.filter(p => visibleGLabels.has(p.x));
-            gChart.update();
+            if (gChart) {
+                applyGdpPolicyOverlay(true);
+            }
         }
         
         document.querySelector(".close-button").onclick = closeModal;

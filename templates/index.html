@@ -404,6 +404,21 @@
         }
         @keyframes spin { 100% { transform: rotate(360deg); } }
 
+        .save-notice {
+            position: fixed;
+            top: 86px;
+            right: 24px;
+            z-index: 150;
+            background: rgba(16, 185, 129, 0.18);
+            border: 1px solid rgba(16, 185, 129, 0.45);
+            color: #a7f3d0;
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-weight: 600;
+            box-shadow: var(--shadow-md);
+            transition: opacity 0.4s ease;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .sticky-header { flex-direction: column; gap: 1rem; padding: 1rem; }
@@ -415,6 +430,11 @@
 </head>
 <body>
     <div id="loader"><div class="spinner"></div></div>
+    {% if saved %}
+    <div id="saveNotice" class="save-notice">
+        <i class="fas fa-check-circle"></i> Saved successfully.
+    </div>
+    {% endif %}
 
     <div class="app-container">
         
@@ -435,7 +455,7 @@
                             <i class="fas fa-filter"></i> <span>Simple View</span>
                         </button>
 
-                        <a href="{{ url_for('quit') }}" class="btn btn-glass">
+                        <a href="{{ url_for('quit') }}" id="saveBtn" class="btn btn-glass">
                             <i class="fas fa-save"></i> Save
                         </a>
                         {% if turn % turn_year == 0 %}
@@ -703,6 +723,8 @@
             const toggleBtn = document.getElementById('toggleViewBtn');
             const icon = toggleBtn.querySelector('i');
             const span = toggleBtn.querySelector('span');
+            const saveBtn = document.getElementById('saveBtn');
+            const saveNotice = document.getElementById('saveNotice');
             
             // 1. Load state from localStorage
             const savedMode = localStorage.getItem('worldSimViewMode') || 'full'; // 'full' or 'simple'
@@ -715,6 +737,22 @@
                 applyViewMode(nextMode);
                 localStorage.setItem('worldSimViewMode', nextMode);
             });
+
+            if (saveBtn) {
+                saveBtn.addEventListener('click', () => {
+                    saveBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Saving...';
+                    saveBtn.style.pointerEvents = 'none';
+                });
+            }
+
+            if (saveNotice) {
+                setTimeout(() => {
+                    saveNotice.style.opacity = '0';
+                }, 2200);
+                setTimeout(() => {
+                    saveNotice.remove();
+                }, 2800);
+            }
 
             function applyViewMode(mode) {
                 const cards = document.querySelectorAll('.card[data-country-card]');
