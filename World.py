@@ -1,7 +1,7 @@
 from Country import Country
 from Money import Money
-import csv
 import math
+from persistence import get_connection, init_db, load_world_state, save_world_state
 
 class World:
     # ★修正: index_base_turn 引数を追加 (デフォルト50)
@@ -25,56 +25,69 @@ class World:
             raise TypeError("Only instances of Money can be added.")
         
     def save(self):
-        data = [[self.turn, self.turn_year]]
-        tmp = []
-        for i in range(len(self.Country_list)):
-            tmp.append(self.Country_list[i].name)
-        data.append(tmp)
-        tmp = []
-        for i in range(len(self.Money_list)):
-            tmp.append(self.Money_list[i].name)
-        data.append(tmp)
-        with open(f'World.csv', 'w', newline='', encoding='utf-8') as file: 
-            writer = csv.writer(file)
-            writer.writerows(data)
-        for i in range(len(self.Country_list)):
-            self.Country_list[i].save_country()
-        for j in range(len(self.Money_list)):
-            self.Money_list[j].save_money()
+        init_db()
+        country_names = [c.name for c in self.Country_list]
+        money_names = [m.name for m in self.Money_list]
+
+        with get_connection() as conn:
+            conn.execute("BEGIN")
+            save_world_state(
+                turn=self.turn,
+                turn_year=self.turn_year,
+                index_base_turn=self.index_base_turn,
+                country_names=country_names,
+                money_names=money_names,
+                conn=conn,
+            )
+            for country in self.Country_list:
+                country.save_country(conn=conn)
+            for money in self.Money_list:
+                money.save_money(conn=conn)
+
+            if country_names:
+                placeholders = ",".join("?" for _ in country_names)
+                conn.execute(
+                    f"DELETE FROM country_state WHERE name NOT IN ({placeholders})",
+                    country_names,
+                )
+            else:
+                conn.execute("DELETE FROM country_state")
+
+            if money_names:
+                placeholders = ",".join("?" for _ in money_names)
+                conn.execute(
+                    f"DELETE FROM money_state WHERE name NOT IN ({placeholders})",
+                    money_names,
+                )
+            else:
+                conn.execute("DELETE FROM money_state")
+
+            conn.commit()
     
     def load(self):
-        try:
-            # CSVファイルを開く (読み込みモード 'r'、改行コードなし newline='')
-            # encoding='utf-8' を指定することで、日本語などの文字化けを防ぐ
-            self.Country_list.clear()
-            self.Money_list.clear()
-            with open("World.csv", 'r', newline='', encoding='utf-8') as file:
-                reader = csv.reader(file)
-                # データを1行ずつ読み込む
-                cnt = 0
-                for row in reader:
-                    if cnt == 0:
-                        self.turn = int(row[0])
-                        self.turn_year = int(row[1])
-                    elif cnt == 1:
-                        
-                        for i in range(len(row)):
-                            c1 = Country(row[i], "d", -1, 1, 1)
-                            c1.load(row[i])
-                            self.add_country(c1)
-                    elif cnt == 2:
-                        
-                        for i in range(len(row)):
-                            # ★修正: デフォルトのコンストラクタに合わせて is_major=False (CSV読み込みで上書きされる)
-                            m1 = Money(row[i], 0, 0, False, is_major=False)
-                            m1.load(row[i])
-                            self.add_money(m1)
-                    cnt += 1
+        init_db()
+        state = load_world_state()
+        if state is None:
+            return False
 
-        except FileNotFoundError:
-            print(f"エラー: ファイル  が見つかりません。")
-        except Exception as e:
-            print(f"エラーが発生しました: {e}")
+        self.Country_list.clear()
+        self.Money_list.clear()
+        self.turn = state["turn"]
+        self.turn_year = state["turn_year"]
+        self.index_base_turn = state["index_base_turn"]
+
+        for cname in state["country_names"]:
+            c1 = Country(cname, "d", -1, 1, 1)
+            if not c1.load(cname):
+                return False
+            self.add_country(c1)
+
+        for mname in state["money_names"]:
+            m1 = Money(mname, 0, 0, False, is_major=False)
+            if not m1.load(mname):
+                return False
+            self.add_money(m1)
+        return True
             
     def Next_turn(self):
         self.turn += 1

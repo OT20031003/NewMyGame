@@ -9,14 +9,12 @@ app = Flask(__name__)
 # グローバルなWorldオブジェクト
 turn_year = 3
 world = None
+mp = {"exe":True} #ここはいじくらない
 # Currency Index の基準ターン設定
 CURRENCY_INDEX_BASE_TURN = 80
-# 初期化関数
-def initialize_world(Load):
-    global world
-    world = World(turn_year, index_base_turn=CURRENCY_INDEX_BASE_TURN)
-    # initial_price を追加して個別に物価レベルを設定
-    default_countries = [
+
+def default_countries():
+    return [
         # 日本: 円安反映 (1ドル=150円想定)。物価15000, 給与係数150 -> 購買力維持
         Country(name="Japan", money_name="Yen", turn_year=turn_year, population_p=5.90, salary_p=0.1*140.0, initial_price=0.1*7000, selfoperation=True, industry_p=1200, military_p=200),
         
@@ -46,13 +44,14 @@ def initialize_world(Load):
         # タイ: 新興国モデル (1ドル=33バーツ), 産業成長中
         Country(name="Thailand", money_name="Baht", turn_year=turn_year, population_p=5.7, salary_p=0.1*5.0, initial_price=0.1*500, selfoperation=True, industry_p=500, military_p=10)
     ]
-    
+
+
+def default_money():
     # === 通貨の初期設定 ===
     # value は「1 USD = 何単位の通貨か」を表すレートとして設定します。
     # base_currency=True の通貨(Dollar)が基準になります。
     # is_major=True で主要通貨バスケットに含めるかを指定
-    
-    default_money = [
+    return [
         Money(name="Yen", interest=0.25, value=120.00, base_currency=False, is_major=True), # 主要通貨
         Money(name="Dollar", interest=4.5, value=1.0, base_currency=True, is_major=True),   # 基軸通貨(主要)
         Money(name="Euro", interest=3.5, value=0.92, base_currency=False, is_major=True),   # 主要通貨
@@ -65,23 +64,58 @@ def initialize_world(Load):
         Money(name="Ruble", interest=15.0, value=92.0, base_currency=False, is_major=False),  # 非主要通貨
         Money(name="Gold", interest=5.0, value=1.0, base_currency=False, is_major=False)  # 非主要通貨
     ]
-    if Load == True:
-        world.load()
-        # Load時はWorldが再作成されない場合があるので、変数を強制的にセット
-        world.index_base_turn = CURRENCY_INDEX_BASE_TURN
-    else :
-        for money in default_money:
-            world.add_money(money)
-        for country in default_countries:
-            world.add_country(country)
 
 
-# 初期化
-initialize_world(False)
-mp = {"exe":True} #ここはいじくらない
+def setup_new_world():
+    global world
+    if world is None:
+        world = World(turn_year, index_base_turn=CURRENCY_INDEX_BASE_TURN)
+    for money in default_money():
+        world.add_money(money)
+    for country in default_countries():
+        world.add_country(country)
+
+
+# 初期化関数
+def initialize_world(load_existing):
+    global world, mp
+    world = World(turn_year, index_base_turn=CURRENCY_INDEX_BASE_TURN)
+    loaded = world.load() if load_existing else False
+    if not loaded:
+        setup_new_world()
+    # Load時はWorldが再作成されない場合があるので、変数を強制的にセット
+    world.index_base_turn = CURRENCY_INDEX_BASE_TURN
+    mp = {"exe":True}
 
 
 @app.route('/')
+def start():
+    return render_template('start.html')
+
+
+@app.route('/start/new', methods=['POST'])
+def start_new():
+    initialize_world(False)
+    return redirect(url_for('index'))
+
+
+@app.route('/start/load', methods=['POST'])
+def start_load():
+    initialize_world(True)
+    return redirect(url_for('index'))
+
+
+@app.before_request
+def ensure_world_initialized():
+    allowed_endpoints = {"start", "start_new", "start_load", "static"}
+    if request.endpoint in allowed_endpoints:
+        return None
+    if world is None:
+        return redirect(url_for('start'))
+    return None
+
+
+@app.route('/index')
 def index():
     money_dict = {money.name: money for money in world.Money_list}
     processed_countries = []

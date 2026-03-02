@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Simulation Start</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-1: #0f172a;
+            --bg-2: #1e293b;
+            --card: rgba(30, 41, 59, 0.78);
+            --line: rgba(148, 163, 184, 0.22);
+            --text: #f8fafc;
+            --muted: #cbd5e1;
+            --primary: #0ea5e9;
+            --primary-hover: #0284c7;
+            --success: #22c55e;
+            --success-hover: #16a34a;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: 'Inter', sans-serif;
+            color: var(--text);
+            display: grid;
+            place-items: center;
+            background:
+                radial-gradient(1000px 500px at 10% -10%, #1d4ed8 0%, transparent 60%),
+                radial-gradient(900px 500px at 90% 120%, #0891b2 0%, transparent 60%),
+                linear-gradient(160deg, var(--bg-1), var(--bg-2));
+            padding: 1.5rem;
+        }
+
+        .panel {
+            width: min(700px, 100%);
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: var(--card);
+            backdrop-filter: blur(8px);
+            padding: 2rem;
+            box-shadow: 0 16px 40px rgba(2, 6, 23, 0.45);
+        }
+
+        h1 {
+            margin: 0 0 0.6rem 0;
+            font-size: clamp(1.8rem, 4vw, 2.4rem);
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+        }
+
+        p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+
+        .actions {
+            margin-top: 1.6rem;
+            display: grid;
+            gap: 0.9rem;
+        }
+
+        .action-form {
+            margin: 0;
+        }
+
+        .btn {
+            width: 100%;
+            border: 0;
+            border-radius: 12px;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 700;
+            padding: 0.95rem 1.1rem;
+            cursor: pointer;
+            transition: transform 0.12s ease, filter 0.12s ease;
+        }
+
+        .btn:hover { filter: brightness(1.06); }
+        .btn:active { transform: translateY(1px); }
+
+        .btn-new {
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+        }
+
+        .btn-load {
+            background: linear-gradient(135deg, var(--success), var(--success-hover));
+        }
+    </style>
+</head>
+<body>
+    <main class="panel">
+        <h1>World Simulation</h1>
+        <p>開始方法を選択してください。保存データがある場合は「途中データから始める」でSQLiteから再開します。</p>
+
+        <div class="actions">
+            <form class="action-form" method="post" action="{{ url_for('start_new') }}">
+                <button type="submit" class="btn btn-new">新規データで始める</button>
+            </form>
+            <form class="action-form" method="post" action="{{ url_for('start_load') }}">
+                <button type="submit" class="btn btn-load">途中データから始める</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

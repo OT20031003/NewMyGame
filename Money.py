@@ -1,6 +1,6 @@
 from Interest import Interest
 from CurrencyRate import CurrencyRate
-import csv
+from persistence import init_db, load_money_state, save_money_state
 
 class Money:
     # ★修正: base_index_rate に名称変更 (旧 rate_at_turn_50)
@@ -15,50 +15,7 @@ class Money:
         self.currency_index = 100.0
         self.past_indices = [100.0]
         self.base_index_rate = None # 基準ターン時点のレートを保持
-    def load(self, name):
-        with open(f"{name}.csv", 'r', newline='', encoding= 'utf-8') as file2:
-            reader = csv.reader(file2)
-            cnt = 0
-            for row in reader:
-                if cnt == 0:
-                    self.name = row[0]
-                elif cnt == 1:
-                    self.interest = Interest(0)
-                    self.interest.interest = [float(x) for x in row]
-                elif cnt == 2:
-                    self.rate = CurrencyRate(name, 0.0)
-                    self.rate.rate = float(row[1])
-                    self.rate.past_usd = float(row[2])
-                    self.rate.past_usd_interest = float(row[3])
-                    self.rate.count = float(row[4])
-                    self.rate.past_interest = float(row[5])
-                    self.rate.past_based_usd = float(row[6])
-                elif cnt == 3:
-                    self.rate.past_rates = [float(x) for x in row]
-                elif cnt == 4:
-                    if row[0] == "True":
-                        self.base_currency = True
-                    else:
-                        self.base_currency = False
-                # === ★追加: インデックスデータのロード ===
-                elif cnt == 5:
-                    self.past_indices = [float(x) for x in row]
-                    self.currency_index = self.past_indices[-1]
-                elif cnt == 6:
-                    # ★修正: 変数名変更に対応
-                    if row[0] != "None":
-                        self.base_index_rate = float(row[0])
-                    else:
-                        self.base_index_rate = None
-                # ★追加: 主要通貨フラグのロード
-                elif cnt == 7:
-                    if row[0] == "True":
-                        self.is_major = True
-                    else:
-                        self.is_major = False
-
-                cnt += 1
-    def save_money(self):
+    def _to_rows(self):
         data = [[self.name]]
         data.append(self.interest.interest)
         data.append([self.rate.currency, self.rate.rate, self.rate.past_usd, self.rate.past_usd_interest, self.rate.count, self.rate.past_interest, self.rate.past_based_usd])
@@ -70,10 +27,55 @@ class Money:
         data.append([self.base_index_rate])
         # ★追加: 主要通貨フラグのセーブ
         data.append([self.is_major])
-        
-        with open(f'{self.name}.csv', 'w', newline='', encoding='utf-8') as file: 
-            writer = csv.writer(file)
-            writer.writerows(data) # 複数の行をまとめて書き込む
+        return data
+
+    def _load_from_rows(self, rows):
+        cnt = 0
+        for row in rows:
+            if cnt == 0:
+                self.name = row[0]
+            elif cnt == 1:
+                self.interest = Interest(0)
+                self.interest.interest = [float(x) for x in row]
+            elif cnt == 2:
+                self.rate = CurrencyRate(self.name, 0.0)
+                self.rate.rate = float(row[1])
+                self.rate.past_usd = float(row[2])
+                self.rate.past_usd_interest = float(row[3])
+                self.rate.count = float(row[4])
+                self.rate.past_interest = float(row[5])
+                self.rate.past_based_usd = float(row[6])
+            elif cnt == 3:
+                self.rate.past_rates = [float(x) for x in row]
+            elif cnt == 4:
+                self.base_currency = row[0] == "True" if not isinstance(row[0], bool) else row[0]
+            # === ★追加: インデックスデータのロード ===
+            elif cnt == 5:
+                self.past_indices = [float(x) for x in row]
+                self.currency_index = self.past_indices[-1]
+            elif cnt == 6:
+                # ★修正: 変数名変更に対応
+                if row[0] not in (None, "None", ""):
+                    self.base_index_rate = float(row[0])
+                else:
+                    self.base_index_rate = None
+            # ★追加: 主要通貨フラグのロード
+            elif cnt == 7:
+                self.is_major = row[0] == "True" if not isinstance(row[0], bool) else row[0]
+
+            cnt += 1
+
+    def load(self, name):
+        init_db()
+        rows = load_money_state(name)
+        if rows is None:
+            return False
+        self._load_from_rows(rows)
+        return True
+
+    def save_money(self, conn=None):
+        init_db()
+        save_money_state(self.name, self._to_rows(), conn=conn)
         
     def change_interest(self, ninterest, 
                         inflation, trade_balance_ratio, gdp_growth,

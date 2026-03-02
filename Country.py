@@ -6,7 +6,7 @@ import math
 from Salary import Salary
 from Price import Price
 from Money import Money
-import csv
+from persistence import init_db, load_country_state, save_country_state
 
 class Country:
     def __init__(self, name, money_name, turn_year, population_p, salary_p, initial_price=100.0, selfoperation=False, industry_p=0.0, military_p=0.0):
@@ -411,113 +411,109 @@ class Country:
         
         return new_tax, [pension_alloc, industry_alloc, military_alloc]
     
+    def _load_from_rows(self, rows):
+        cnt = 0
+        tcnt = -1
+        pcnt = -1
+        for row in rows:
+            if cnt == 0:
+                self.price = Price(int(row[1]))
+                self.turn_year = int(row[1])
+                self.money_name = row[2]
+                self.tax = float(row[3])
+                self.bef_tax = float(row[4])
+            elif cnt == 1:
+                self.price.past_price = [float(x) for x in row]
+            elif cnt == 2:
+                pass
+            elif cnt == 3:
+                self.budget.budget = [float(row[0]), float(row[1]), float(row[2]), float(row[3])]
+            elif cnt == 4:
+                tcnt = int(row[0])
+                self.budget.past_budget = []
+            elif cnt <= 4 + tcnt:
+                self.budget.past_budget.append([float(row[0]), float(row[1]), float(row[2]), float(row[3])])
+            elif cnt == 5 + tcnt:
+                self.industry = CountryPower(row[0])
+            elif cnt == 6 + tcnt:
+                self.industry.turn = int(row[0])
+            elif cnt == 7 + tcnt:
+                self.industry.past = [float(x) for x in row]
+            elif cnt == 8 + tcnt:
+                self.industry.bef = float(row[0])
+            elif cnt == 9 + tcnt:
+                self.industry.past_power = [float(x) for x in row]
+            elif cnt == 9 + tcnt + 1:
+                self.military = CountryPower(row[0])
+            elif cnt == 10 + tcnt + 1:
+                self.military.turn = int(row[0])
+            elif cnt == 11 + tcnt + 1:
+                self.military.past = [float(x) for x in row]
+            elif cnt == 12 + tcnt + 1:
+                self.military.bef = float(row[0])
+            elif cnt == 12 + tcnt + 2:
+                self.military.past_power = [float(x) for x in row]
+            elif cnt == 13 + tcnt + 2:
+                self.population = [[0,0, 0] for _ in range(int(row[0]))]
+                pcnt = int(row[0])
+            elif cnt <= 13 + tcnt + pcnt + 2:
+                self.population[cnt - (14 + tcnt + 2)][0] = int(row[0])
+                self.population[cnt - (14 + tcnt + 2)][1] = Satisfaction(float(row[1]), float(row[2]), float(row[3]), float(row[4]), int(row[5]))
+                self.population[cnt - (14 + tcnt + 2)][2] = Salary(cnt - (14 + tcnt + 2), float(row[6]), float(row[7]), float(row[8]), coef=1)
+                self.population[cnt - (14 + tcnt + 2)][2].befsalary = float(row[9])
+            elif cnt == 14 + tcnt + pcnt + 2:
+                self.gdp_usd = float(row[0])
+                self.price_usd = float(row[1])
+                self.usd = float(row[2])
+                self.population_p = float(row[3])
+                self.salary_p = float(row[4])
+                self.selfoperation = bool(row[5]) if isinstance(row[5], bool) else (row[5] == "True")
+                if len(row) > 6:
+                    self.domestic_money = float(row[6])
+                else:
+                    self.domestic_money = 0.0
+            elif cnt == 15 + tcnt + pcnt + 2:
+                self.past_gdp_usd = [float(x) for x in row]
+            elif cnt == 16 + tcnt + pcnt + 2:
+                self.past_gdp = [float(x) for x in row]
+            elif cnt == 17 + tcnt + pcnt + 2:
+                self.past_usd = [float(x) for x in row]
+            elif cnt == 18 + tcnt + pcnt + 2:
+                self.past_population = [int(x) for x in row]
+            elif cnt == 19 + tcnt + pcnt + 2:
+                self.past_domestic_money = [float(x) for x in row]
+            elif cnt == 20 + tcnt + pcnt + 2:
+                self.past_trade_balance = [float(x) for x in row]
+            elif cnt == 21 + tcnt + pcnt + 2:
+                self.tariffs = {}
+                for i in range(0, len(row), 2):
+                    if i + 1 < len(row):
+                        self.tariffs[str(row[i])] = float(row[i + 1])
+            cnt += 1
+
+        if not hasattr(self, 'past_trade_balance'):
+            self.past_trade_balance = [0.0] * len(self.past_gdp)
+        if not hasattr(self, 'tariffs'):
+            self.tariffs = {}
+        if not hasattr(self, 'turn_tariff_cost_usd'):
+            self.turn_tariff_cost_usd = 0.0
+
     def load(self, name):
         self.name = name
-        with open(f"{name}.csv", 'r', newline='', encoding= 'utf-8') as file2:
-            reader2 = csv.reader(file2)
-            cnt = 0
-            tcnt =-1
-            pcnt = -1
-            for row in reader2:
-                if cnt == 0:
-                    self.price = Price(int(row[1]))
-                    self.turn_year = int(row[1])
-                    self.money_name = row[2]
-                    self.tax = float(row[3])
-                    self.bef_tax = float(row[4])
-                elif cnt == 1:
-                    self.price.past_price = [float(x) for x in row]
-                elif cnt == 2:
-                    pass
-                elif cnt == 3:
-                    self.budget.budget = [float(row[0]), float(row[1]), float(row[2]), float(row[3])]
-                elif cnt == 4:
-                    tcnt = int(row[0])
-                    self.budget.past_budget = []
-                elif cnt <= 4 + tcnt:
-                    self.budget.past_budget.append([float(row[0]), float(row[1]), float(row[2]), float(row[3])])
-                elif cnt == 5 + tcnt:
-                    self.industry = CountryPower(row[0])
-                elif cnt == 6 + tcnt:
-                    self.industry.turn = int(row[0])
-                elif cnt == 7 + tcnt:
-                    self.industry.past = [float(x) for x in row]
-                elif cnt == 8 + tcnt:
-                    self.industry.bef = float(row[0])
-                elif cnt == 9 + tcnt:
-                    self.industry.past_power = [float(x) for x in row]
-                elif cnt == 9 + tcnt + 1:
-                    self.military = CountryPower(row[0])
-                elif cnt == 10 + tcnt + 1:
-                    self.military.turn = int(row[0])
-                elif cnt == 11 + tcnt + 1:
-                    self.military.past = [float(x) for x in row]
-                elif cnt == 12 + tcnt + 1:
-                    self.military.bef = float(row[0])
-                elif cnt == 12 + tcnt + 2:
-                    self.military.past_power = [float(x) for x in row]
-                elif cnt == 13 + tcnt + 2:
-                    self.population = [[0,0, 0] for _ in range(int(row[0]))]
-                    pcnt = int(row[0])
-                elif cnt <= 13 + tcnt + pcnt + 2:
-                    self.population[cnt - (14 + tcnt + 2)][0] = int(row[0])
-                    self.population[cnt - (14 + tcnt + 2)][1] = Satisfaction(float(row[1]), float(row[2]), float(row[3]), float(row[4]), int(row[5]))
-                    # 給料のロード時も、befsalaryなどが正しく設定されていれば問題ない
-                    self.population[cnt - (14 + tcnt + 2)][2] = Salary(cnt - (14 + tcnt + 2), float(row[6]), float(row[7]), float(row[8]), coef=1)
-                    self.population[cnt - (14 + tcnt + 2)][2].befsalary = float(row[9])
-                    
-                elif cnt == 14 + tcnt + pcnt + 2:
-                    self.gdp_usd = float(row[0])
-                    self.price_usd = float(row[1])
-                    self.usd = float(row[2])
-                    self.population_p = float(row[3])
-                    self.salary_p = float(row[4])
-                    self.selfoperation = True if row[5] == "True" else False
-                    
-                    if len(row) > 6:
-                        self.domestic_money = float(row[6])
-                    else:
-                        self.domestic_money = 0.0
+        init_db()
+        rows = load_country_state(name)
+        if rows is None:
+            return False
+        self._load_from_rows(rows)
+        return True
 
-                elif cnt == 15 + tcnt + pcnt + 2:
-                    self.past_gdp_usd = [float(x) for x in row]
-                elif cnt == 16 + tcnt + pcnt + 2:
-                    self.past_gdp = [float(x) for x in row]
-                elif cnt == 17 + tcnt + pcnt + 2:
-                    self.past_usd = [float(x) for x in row]
-                elif cnt == 18 + tcnt + pcnt + 2:
-                    self.past_population = [int(x) for x in row]
-                elif cnt == 19 + tcnt + pcnt + 2:
-                    self.past_domestic_money = [float(x) for x in row]
-                
-                elif cnt == 20 + tcnt + pcnt + 2:
-                    self.past_trade_balance = [float(x) for x in row]
-                
-                # ★追加: 関税データの読み込み
-                elif cnt == 21 + tcnt + pcnt + 2:
-                    # 形式: target_country, rate, target_country, rate...
-                    self.tariffs = {}
-                    for i in range(0, len(row), 2):
-                        if i+1 < len(row):
-                            self.tariffs[row[i]] = float(row[i+1])
-
-                cnt += 1
-            
-            # 古いセーブデータ対策
-            if not hasattr(self, 'past_trade_balance'):
-                self.past_trade_balance = [0.0] * len(self.past_gdp)
-            if not hasattr(self, 'tariffs'):
-                self.tariffs = {}
-            if not hasattr(self, 'turn_tariff_cost_usd'):
-                self.turn_tariff_cost_usd = 0.0
-
-    def save_country(self):
+    def _to_rows(self):
         data = [[self.name,self.turn_year,self.money_name,
                  self.tax, self.bef_tax]]
         
         data.append(self.price.past_price)
         fc = []
-        for k, v in self.foreign_currency:
+        for k, v in self.foreign_currency.items():
             fc.append([k,v])
         data.append(fc)
         data.append(self.budget.budget)
@@ -556,10 +552,11 @@ class Country:
             tf_row.append(target)
             tf_row.append(rate)
         data.append(tf_row)
-        
-        with open(f'{self.name}.csv', 'w', newline='', encoding='utf-8') as file: 
-            writer = csv.writer(file)
-            writer.writerows(data)
+        return data
+
+    def save_country(self, conn=None):
+        init_db()
+        save_country_state(self.name, self._to_rows(), conn=conn)
     
     
     def get_usd_change(self):
