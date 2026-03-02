@@ -492,14 +492,14 @@ def show_country(name):
     for c in world.Country_list:
         # GDP History (USD)
         gdp_usd_history = c.past_gdp_usd
-        
+
         # GDP Per Capita History (USD)の計算
         gdp_per_capita_history = []
         pop_history = c.past_population
-        
+
         # データ長を揃える（短い方に合わせる）
         min_len = min(len(gdp_usd_history), len(pop_history))
-        
+
         for i in range(min_len):
             pop = pop_history[i]
             gdp = gdp_usd_history[i]
@@ -507,11 +507,59 @@ def show_country(name):
                 gdp_per_capita_history.append(gdp / pop)
             else:
                 gdp_per_capita_history.append(0.0)
-        
+
+        # Price Inflation Rate 履歴（各国の turn_year を使用）
+        inflation_history = []
+        turn_year = c.turn_year
+        prices = c.price.past_price
+        for i in range(turn_year, len(prices)):
+            base_price = prices[i - turn_year]
+            if base_price != 0:
+                inflation_history.append(((prices[i] - base_price) / base_price) * 100.0)
+            else:
+                inflation_history.append(0.0)
+
+        # Net Debt / GDP Ratio 履歴（%）
+        debt_ratio_history = []
+        domestic_hist = c.past_domestic_money
+        usd_hist = c.past_usd
+        gdp_hist = c.past_gdp
+
+        c_money = next((m for m in world.Money_list if m.name == c.money_name), None)
+        is_base_currency = c_money.base_currency if c_money else False
+        rate_hist = c_money.get_past_rate() if c_money else []
+
+        debt_len = min(len(domestic_hist), len(usd_hist), len(gdp_hist))
+        for i in range(debt_len):
+            rate = 1.0
+            if not is_base_currency:
+                if i < len(rate_hist):
+                    rate = rate_hist[i]
+                elif len(rate_hist) > 0:
+                    rate = rate_hist[-1]
+
+            gdp = gdp_hist[i]
+            if gdp != 0:
+                debt = -(domestic_hist[i] + usd_hist[i] * rate)
+                debt_ratio_history.append((debt / gdp) * 100.0)
+            else:
+                debt_ratio_history.append(0.0)
+
+        # Income by Age (対象国通貨ベース) を閲覧中の国通貨へ換算
+        income_by_age_local = [c.population[i][2].get_salary() for i in range(100)]
+        c_rate_vs_usd = c_money.get_rate() if c_money else 1.0
+        target_rate_vs_usd = target_money.get_rate()
+        rate_to_target = target_rate_vs_usd / (c_rate_vs_usd + 0.00001)
+        income_by_age_converted = [v * rate_to_target for v in income_by_age_local]
+
         all_countries_data[c.name] = {
             "gdp_usd_history": gdp_usd_history,
             "gdp_per_capita_history": gdp_per_capita_history,
-            "industry_history": c.industry.past_power # 産業力履歴
+            "industry_history": c.industry.past_power,  # 産業力履歴
+            "price_inflation_history": inflation_history,
+            "debt_ratio_history": debt_ratio_history,
+            "population_history": c.past_population,
+            "income_by_age_converted": income_by_age_converted
         }
 
     # mp: 他通貨との為替レートを格納する辞書

@@ -245,7 +245,7 @@
 
         <div class="card" style="margin-bottom: 2rem; border-left: 4px solid var(--accent-color);">
             <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--text-color); margin-bottom: 1rem; font-weight: 600;">
-                <i class="fas fa-balance-scale" style="margin-right: 8px;"></i> Compare with Countries (USD GDP, Per Capita, Industry)
+                <i class="fas fa-balance-scale" style="margin-right: 8px;"></i> Compare with Countries (USD GDP, Per Capita, Industry, Inflation, Debt, Population, Income)
             </h3>
             <div style="display: flex; flex-wrap: wrap; gap: 0.8rem;">
                 {% for c_name in all_countries_data.keys()|sort %}
@@ -1066,7 +1066,11 @@
             const targetCharts = [
                 { instance: chartInstances.usdgdpChart, dataKey: 'gdp_usd_history', labelSuffix: 'GDP (USD)' },
                 { instance: chartInstances.gdpPerCapitaUsdChart, dataKey: 'gdp_per_capita_history', labelSuffix: 'Per Capita (USD)' },
-                { instance: chartInstances.industryData, dataKey: 'industry_history', labelSuffix: 'Industry' }
+                { instance: chartInstances.industryData, dataKey: 'industry_history', labelSuffix: 'Industry' },
+                { instance: chartInstances.priceChart, dataKey: 'price_inflation_history', labelSuffix: 'Inflation Rate' },
+                { instance: chartInstances.debtChart, dataKey: 'debt_ratio_history', labelSuffix: 'Net Debt / GDP' },
+                { instance: chartInstances.populationHistoryChart, dataKey: 'population_history', labelSuffix: 'Population' },
+                { instance: chartInstances.incomeChart, dataKey: 'income_by_age_converted', labelSuffix: 'Income (Converted)' }
             ];
 
             targetCharts.forEach(target => {
@@ -1077,10 +1081,15 @@
                 let mainData;
                 if (target.dataKey === 'gdp_usd_history') mainData = usdGdpValues;
                 else if (target.dataKey === 'gdp_per_capita_history') mainData = gdpPerCapitaUsdData;
-                else mainData = industryData;
+                else if (target.dataKey === 'industry_history') mainData = industryData;
+                else if (target.dataKey === 'price_inflation_history') mainData = priceInflationData;
+                else if (target.dataKey === 'debt_ratio_history') mainData = debtRatioData;
+                else if (target.dataKey === 'population_history') mainData = pastPopulationData;
+                else mainData = incomeData;
 
                 const mainDataset = chart.data.datasets[0];
-                mainDataset.data = sliceData(mainData, 100); 
+                const shouldSlice = target.dataKey !== 'income_by_age_converted';
+                mainDataset.data = shouldSlice ? sliceData(mainData, 100) : mainData;
                 
                 chart.data.datasets = [mainDataset];
 
@@ -1090,7 +1099,8 @@
                     if (!cData) return;
                     
                     const rawData = cData[target.dataKey];
-                    const sliced = sliceData(rawData, 100);
+                    if (!rawData) return;
+                    const sliced = shouldSlice ? sliceData(rawData, 100) : rawData;
                     
                     const color = getCountryColor(cName);
                     
