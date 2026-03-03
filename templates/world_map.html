@@ -131,6 +131,15 @@
             background: linear-gradient(140deg, #8f7757, var(--empty-land));
         }
 
+        .tile.empty.claimable {
+            outline: 1px solid rgba(34, 197, 94, 0.85);
+            box-shadow: inset 0 0 0 1px rgba(134, 239, 172, 0.85), 0 0 6px rgba(34, 197, 94, 0.45);
+        }
+
+        .tile.empty:not(.claimable) {
+            opacity: 0.42;
+        }
+
         .tile.owned {
             background: var(--owner-color, #888);
         }
@@ -274,7 +283,7 @@
                                 {% elif cell == '' %}
                                     <button type="button" class="tile empty" data-x="{{ x }}" data-y="{{ y }}" data-type="empty" title="空き地"></button>
                                 {% else %}
-                                    <button type="button" class="tile owned" data-x="{{ x }}" data-y="{{ y }}" data-type="owned" title="{{ cell }}" style="--owner-color: {{ map_data.country_colors.get(cell, '#888') }};"></button>
+                                    <button type="button" class="tile owned" data-x="{{ x }}" data-y="{{ y }}" data-type="owned" data-owner="{{ cell }}" title="{{ cell }}" style="--owner-color: {{ map_data.country_colors.get(cell, '#888') }};"></button>
                                 {% endif %}
                             {% endfor %}
                         {% endfor %}
@@ -312,14 +321,15 @@
                         <i class="fas fa-chess-rook"></i> 選択マスを占領
                     </button>
                     <p class="muted" style="margin: 10px 0 0; font-size: 0.8rem; line-height: 1.5;">
-                        空き地かつ自国領に隣接、または海越し隣接(狭い海峡)のマスを占領できます。占領コストは近隣諸国の距離重み付き平均GDP(基軸通貨)の20%です。
+                        空き地にカーソルを合わせると、選択国が占領できるかどうかの理由が表示されます。海越し隣接は8方向の直線上で海を越えた先に最初に当たる陸地で判定します。
                     </p>
                 </form>
 
                 <div class="legend">
                     <h3>凡例</h3>
                     <div class="legend-item"><span class="swatch" style="background: linear-gradient(135deg, #0f2742, var(--sea));"></span> 海 (獲得不可)</div>
-                    <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #8f7757, var(--empty-land));"></span> 空き地 (獲得可能)</div>
+                    <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #8f7757, var(--empty-land)); box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.7);"></span> 強調された空き地 (選択国が占領可能)</div>
+                    <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #8f7757, var(--empty-land)); opacity: 0.42;"></span> 空き地 (現在は占領不可)</div>
                 </div>
 
                 <div class="country-list">
@@ -342,12 +352,65 @@
         const claimX = document.getElementById('claimX');
         const claimY = document.getElementById('claimY');
         const claimBtn = document.getElementById('claimBtn');
+        const countrySelect = document.getElementById('country_name');
+        const claimOptionsByCountry = {{ claim_options_by_country|tojson }};
+        const emptyTiles = Array.from(document.querySelectorAll('.tile.empty'));
         let selectedTile = null;
+
+        function clearSelection() {
+            if (selectedTile) {
+                selectedTile.classList.remove('selected');
+                selectedTile = null;
+            }
+            claimX.value = '';
+            claimY.value = '';
+            claimBtn.disabled = true;
+        }
+
+        function getClaimOptions(countryName) {
+            return claimOptionsByCountry[countryName] || {};
+        }
+
+        function refreshClaimableHighlights() {
+            const selectedCountry = countrySelect.value;
+            const claimOptions = getClaimOptions(selectedCountry);
+
+            emptyTiles.forEach((tile) => {
+                const key = `${tile.dataset.x},${tile.dataset.y}`;
+                const option = claimOptions[key];
+                const isClaimable = Boolean(option && option.claimable);
+                tile.classList.toggle('claimable', isClaimable);
+                tile.title = option
+                    ? option.reason
+                    : '現在の条件では占領判定情報がありません。';
+            });
+
+            if (selectedTile) {
+                const selectedKey = `${selectedTile.dataset.x},${selectedTile.dataset.y}`;
+                const selectedOption = claimOptions[selectedKey];
+                if (!(selectedOption && selectedOption.claimable)) {
+                    clearSelection();
+                }
+            }
+        }
 
         document.querySelectorAll('.tile').forEach((tile) => {
             tile.addEventListener('click', () => {
                 const type = tile.dataset.type;
+                if (type === 'owned') {
+                    const owner = tile.dataset.owner;
+                    if (owner && owner !== countrySelect.value) {
+                        countrySelect.value = owner;
+                    }
+                    clearSelection();
+                    refreshClaimableHighlights();
+                    return;
+                }
+
                 if (type !== 'empty') {
+                    return;
+                }
+                if (!tile.classList.contains('claimable')) {
                     return;
                 }
 
@@ -362,6 +425,13 @@
                 claimBtn.disabled = false;
             });
         });
+
+        countrySelect.addEventListener('change', () => {
+            clearSelection();
+            refreshClaimableHighlights();
+        });
+
+        refreshClaimableHighlights();
     </script>
 </body>
 </html>

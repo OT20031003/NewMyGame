@@ -603,7 +603,7 @@
                                     <div class="stat-row" style="margin-bottom: 2px;">
                                         <span class="stat-label"><i class="fas fa-shield-alt"></i> Mil</span>
                                         <div class="text-right">
-                                            <span class="stat-value font-mono">{{ "%.1f"|format(country.military.caluc_power()) }}</span>
+                                            <span class="stat-value font-mono">{{ "%.1f"|format(country.available_military) }}</span>
                                             {% set mil_change = country.military.change_power() %}
                                             <span class="change-text {{ 'text-success' if mil_change >= 0 else 'text-danger' }}">
                                                 {{ "%+.1f"|format(mil_change) }}%
@@ -611,7 +611,10 @@
                                         </div>
                                     </div>
                                     <div class="progress-bar-bg">
-                                        <div class="progress-bar-fill" style="width: {{ [(country.military.caluc_power() / 10000 * 100), 100]|min }}%; background-color: var(--color-danger);"></div>
+                                        <div class="progress-bar-fill" style="width: {{ [(country.available_military / 10000 * 100), 100]|min }}%; background-color: var(--color-danger);"></div>
+                                    </div>
+                                    <div class="mono muted" style="font-size: 0.72rem; margin-top: 3px;">
+                                        Total {{ "%.1f"|format(country.military.caluc_power()) }} / Committed {{ "%.1f"|format(country.committed_military) }}
                                     </div>
                                 </div>
                             </div>
@@ -832,7 +835,7 @@
             {% for country in countries %} {{ "%.3f"|format(country.industry.caluc_power()) }}, {% endfor %}
         ];
         const militaryPowerValues = [
-            {% for country in countries %} {{ "%.3f"|format(country.military.caluc_power()) }}, {% endfor %}
+            {% for country in countries %} {{ "%.3f"|format(country.available_military) }}, {% endfor %}
         ];
 
         // Expanded distinct color palette for countries
@@ -956,7 +959,7 @@
 
         createChart('militaryPowerChart', 'bar', {
             labels: countryNames,
-            datasets: [{ label: 'Military', data: militaryPowerValues }]
+            datasets: [{ label: 'Available Military', data: militaryPowerValues }]
         }, barChartOptions);
 
     </script>

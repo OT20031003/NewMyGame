@@ -122,6 +122,7 @@ def ensure_world_initialized():
 def index():
     saved = request.args.get('saved') == '1'
     money_dict = {money.name: money for money in world.Money_list}
+    world.ensure_territory_map()
     processed_countries = []
     for country in world.Country_list:
         money = money_dict[country.money_name]
@@ -131,7 +132,9 @@ def index():
             country.past_gdp_usd[-1] = country.gdp_usd
         
         country.industry_power_usd = country.industry.caluc_power() / money.get_rate()
-        country.military_power_usd = country.military.caluc_power() / money.get_rate()
+        country.committed_military = world.territory_map["military_committed"].get(country.name, 0.0)
+        country.available_military = world.get_country_available_military(country.name)
+        country.military_power_usd = country.available_military / money.get_rate()
         country.exchange_rate = money.get_rate()
         country.interest_rate = money.get_interest()
         country.price_usd = country.price.get_price() / money.get_rate()
@@ -490,6 +493,10 @@ def world_map():
         })
 
     countries = sorted(countries, key=lambda c: c["name"])
+    claim_options_by_country = {
+        c["name"]: world.get_claim_options(c["name"], require_resources=True)
+        for c in countries
+    }
     selected_country = request.args.get("selected_country", "")
     valid_names = {c["name"] for c in countries}
     if selected_country not in valid_names and countries:
@@ -502,6 +509,7 @@ def world_map():
         base_currency_name=base_money.name if base_money else "USD",
         message=message,
         selected_country=selected_country,
+        claim_options_by_country=claim_options_by_country,
     )
 
 @app.route('/world_map/claim', methods=['POST'])

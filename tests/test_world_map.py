@@ -100,6 +100,7 @@ class WorldMapTests(unittest.TestCase):
 
         x, y = target
         alpha = world._country_by_name("Alpha")
+        alpha.usd = 1_000_000_000_000.0
         before_usd = alpha.usd
         before_domestic = alpha.domestic_money
         before_committed = world.territory_map["military_committed"]["Alpha"]
@@ -109,7 +110,8 @@ class WorldMapTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(world.territory_map["tiles"][y][x], "Alpha")
         self.assertGreater(world.territory_map["military_committed"]["Alpha"], before_committed)
-        self.assertTrue(alpha.usd < before_usd or alpha.domestic_money < before_domestic)
+        self.assertLess(alpha.usd, before_usd)
+        self.assertEqual(alpha.domestic_money, before_domestic)
 
     def test_claim_territory_rejects_sea(self):
         world = self._build_world()
@@ -164,6 +166,73 @@ class WorldMapTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(world.territory_map["tiles"][0][2], "Alpha")
 
+    def test_claim_territory_allows_long_sea_crossing(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        beta = world._country_by_name("Beta")
+        gamma = world._country_by_name("Gamma")
+        alpha.gdp_usd = 120.0
+        beta.gdp_usd = 300.0
+        gamma.gdp_usd = 180.0
+        world.territory_map = {
+            "width": 8,
+            "height": 1,
+            "tiles": [["Alpha", "__SEA__", "__SEA__", "__SEA__", "__SEA__", "", "Beta", "Gamma"]],
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        ok, _ = world.claim_territory("Alpha", 5, 0)
+        self.assertTrue(ok)
+        self.assertEqual(world.territory_map["tiles"][0][5], "Alpha")
+
+    def test_claim_territory_allows_diagonal_sea_crossing(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        beta = world._country_by_name("Beta")
+        gamma = world._country_by_name("Gamma")
+        alpha.gdp_usd = 120.0
+        beta.gdp_usd = 300.0
+        gamma.gdp_usd = 180.0
+        world.territory_map = {
+            "width": 3,
+            "height": 3,
+            "tiles": [
+                ["Alpha", "__SEA__", "Beta"],
+                ["__SEA__", "__SEA__", "__SEA__"],
+                ["Gamma", "__SEA__", ""],
+            ],
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        ok, _ = world.claim_territory("Alpha", 2, 2)
+        self.assertTrue(ok)
+        self.assertEqual(world.territory_map["tiles"][2][2], "Alpha")
+
+    def test_claim_territory_rejects_bent_sea_path(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        alpha.gdp_usd = 120.0
+        world.territory_map = {
+            "width": 3,
+            "height": 3,
+            "tiles": [
+                ["", "__SEA__", ""],
+                ["Alpha", "__SEA__", ""],
+                ["", "", "Beta"],
+            ],
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        ok, message = world.claim_territory("Alpha", 2, 0)
+        self.assertFalse(ok)
+        self.assertIn("隣接", message)
+
     def test_territory_cost_uses_weighted_neighbor_gdp(self):
         world = self._build_world()
         alpha = world._country_by_name("Alpha")
@@ -181,9 +250,60 @@ class WorldMapTests(unittest.TestCase):
             "seed": None,
         }
 
-        cost_usd, _ = world.territory_cell_cost("Alpha", 2, 0)
+        cost_usd, cost_military = world.territory_cell_cost("Alpha", 2, 0)
         expected_weighted = (300.0 * (1.0 / 2.0) + 100.0 * (1.0 / 5.0)) / ((1.0 / 2.0) + (1.0 / 5.0))
         self.assertAlmostEqual(cost_usd, expected_weighted * 0.20, places=6)
+        expected_weighted_military = (30.0 * (1.0 / 2.0) + 25.0 * (1.0 / 5.0)) / ((1.0 / 2.0) + (1.0 / 5.0))
+        self.assertAlmostEqual(cost_military, expected_weighted_military, places=6)
+
+    def test_claim_territory_fails_when_usd_short(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        beta = world._country_by_name("Beta")
+        gamma = world._country_by_name("Gamma")
+        alpha.gdp_usd = 50.0
+        beta.gdp_usd = 1000.0
+        gamma.gdp_usd = 800.0
+        alpha.usd = 10.0
+        alpha.domestic_money = 10_000_000.0
+        before_domestic = alpha.domestic_money
+        world.territory_map = {
+            "width": 4,
+            "height": 1,
+            "tiles": [["Alpha", "", "Beta", "Gamma"]],
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        ok, message = world.claim_territory("Alpha", 1, 0)
+        self.assertFalse(ok)
+        self.assertIn("USD", message)
+        self.assertEqual(alpha.domestic_money, before_domestic)
+        self.assertEqual(world.territory_map["tiles"][0][1], world.EMPTY_TILE)
+
+    def test_claim_options_contains_reason_for_unclaimable_tile(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        beta = world._country_by_name("Beta")
+        gamma = world._country_by_name("Gamma")
+        alpha.gdp_usd = 50.0
+        beta.gdp_usd = 1000.0
+        gamma.gdp_usd = 800.0
+        alpha.usd = 1.0
+        world.territory_map = {
+            "width": 4,
+            "height": 1,
+            "tiles": [["Alpha", "", "Beta", "Gamma"]],
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        options = world.get_claim_options("Alpha", require_resources=True)
+        self.assertIn("1,0", options)
+        self.assertFalse(options["1,0"]["claimable"])
+        self.assertIn("USD", options["1,0"]["reason"])
 
     def test_claim_territory_fails_when_military_short(self):
         world = self._build_world()

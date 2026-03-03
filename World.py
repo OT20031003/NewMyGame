@@ -1,6 +1,5 @@
 from Country import Country
 from Money import Money
-from collections import deque
 import math
 import random
 from persistence import get_connection, init_db, load_world_state, save_world_state
@@ -55,6 +54,13 @@ class World:
             yield x, y - 1
         if y + 1 < height:
             yield x, y + 1
+
+    def _directions8(self):
+        return (
+            (-1, -1), (0, -1), (1, -1),
+            (-1, 0),            (1, 0),
+            (-1, 1),  (0, 1),   (1, 1),
+        )
 
     def _country_by_name(self, country_name):
         return next((c for c in self.Country_list if c.name == country_name), None)
@@ -133,6 +139,12 @@ class World:
         estimated = country.caluc_gdp() / rate
         return max(0.0, estimated)
 
+    def _country_military_power(self, country_name):
+        country = self._country_by_name(country_name)
+        if country is None:
+            return 0.0
+        return max(0.0, country.military.caluc_power())
+
     def _weighted_neighbor_gdp(self, x, y, exclude_country=None):
         positions = self._country_tile_positions()
         weighted_sum = 0.0
@@ -163,42 +175,66 @@ class World:
             return sum(fallbacks) / len(fallbacks)
         return 0.0
 
-    def _is_adjacent_via_sea(self, x, y, country_name, max_sea_hops=3):
+    def _weighted_neighbor_military(self, x, y, exclude_country=None):
+        positions = self._country_tile_positions()
+        weighted_sum = 0.0
+        weight_sum = 0.0
+
+        for cname, coords in positions.items():
+            if cname == exclude_country or not coords:
+                continue
+            min_dist = min(abs(x - cx) + abs(y - cy) for cx, cy in coords)
+            weight = 1.0 / (min_dist + 1.0)
+            military = self._country_military_power(cname)
+            if military <= 0.0:
+                continue
+            weighted_sum += military * weight
+            weight_sum += weight
+
+        if weight_sum > 0.0:
+            return weighted_sum / weight_sum
+
+        fallbacks = []
+        for c in self.Country_list:
+            if c.name == exclude_country:
+                continue
+            military = self._country_military_power(c.name)
+            if military > 0:
+                fallbacks.append(military)
+        if fallbacks:
+            return sum(fallbacks) / len(fallbacks)
+        return 0.0
+
+    def _is_adjacent_via_sea(self, x, y, country_name):
         if not self.territory_map:
             return False
         width = self.territory_map.get("width", 0)
         height = self.territory_map.get("height", 0)
         tiles = self.territory_map.get("tiles", [])
 
-        queue = deque()
-        visited = set()
+        for dx, dy in self._directions8():
+            cx = x + dx
+            cy = y + dy
+            sea_len = 0
+            while 0 <= cx < width and 0 <= cy < height:
+                cell = tiles[cy][cx]
+                if cell == self.SEA_TILE:
+                    sea_len += 1
+                    cx += dx
+                    cy += dy
+                    continue
 
-        for nx, ny in self._neighbors4(x, y, width, height):
-            if tiles[ny][nx] == self.SEA_TILE:
-                queue.append((nx, ny, 1))
-                visited.add((nx, ny))
-
-        while queue:
-            sx, sy, depth = queue.popleft()
-            for nx, ny in self._neighbors4(sx, sy, width, height):
-                if tiles[ny][nx] == country_name:
+                # 海を1マス以上またいだ先で、最初に当たる陸地が自国なら海越し隣接。
+                if sea_len >= 1 and cell == country_name:
                     return True
-
-            if depth >= max_sea_hops:
-                continue
-
-            for nx, ny in self._neighbors4(sx, sy, width, height):
-                if tiles[ny][nx] == self.SEA_TILE and (nx, ny) not in visited:
-                    visited.add((nx, ny))
-                    queue.append((nx, ny, depth + 1))
+                break
 
         return False
 
     def territory_cell_cost(self, country_name, x, y):
         regional_weighted_avg_gdp = self._weighted_neighbor_gdp(x, y, exclude_country=country_name)
         base_currency_cost = max(0.0, regional_weighted_avg_gdp * 0.20)
-        enemy_adjacent = self._adjacent_enemy_count(x, y, country_name)
-        military_cost = 1.5 + enemy_adjacent * 1.5
+        military_cost = max(0.0, self._weighted_neighbor_military(x, y, exclude_country=country_name))
         return base_currency_cost, military_cost
 
     def normalize_territory_map(self):
@@ -384,47 +420,103 @@ class World:
         committed = self.territory_map["military_committed"].get(country_name, 0.0)
         return max(0.0, country.military.caluc_power() - committed)
 
-    def claim_territory(self, country_name, x, y):
+    def _validate_claim_territory(self, country_name, x, y, require_resources=True):
         self.ensure_territory_map()
         width = self.territory_map["width"]
         height = self.territory_map["height"]
 
         if x < 0 or y < 0 or x >= width or y >= height:
-            return False, "指定したマスは地図の範囲外です。"
+            return False, "指定したマスは地図の範囲外です。", None, 0.0, 0.0
 
         cell = self.territory_map["tiles"][y][x]
         if cell == self.SEA_TILE:
-            return False, "海マスは獲得できません。"
+            return False, "海マスは獲得できません。", None, 0.0, 0.0
         if cell != self.EMPTY_TILE:
-            return False, "そのマスはすでに他国領です。"
+            return False, "そのマスはすでに他国領です。", None, 0.0, 0.0
 
         country = self._country_by_name(country_name)
         if country is None:
-            return False, "対象の国が見つかりません。"
+            return False, "対象の国が見つかりません。", None, 0.0, 0.0
 
         if self._country_has_any_territory(country_name):
             direct_adjacent = self._is_adjacent_to_country(x, y, country_name)
             sea_adjacent = self._is_adjacent_via_sea(x, y, country_name)
             if not direct_adjacent and not sea_adjacent:
-                return False, "占領は自国領に隣接する空き地、または海越し隣接マスのみ可能です。"
+                return False, "占領は自国領に隣接する空き地、または海越し隣接マスのみ可能です。", country, 0.0, 0.0
 
         cost_usd, cost_military = self.territory_cell_cost(country_name, x, y)
-        available_military = self.get_country_available_military(country_name)
-        if available_military < cost_military:
-            return False, f"軍事力が不足しています。必要 {cost_military:.1f} / 利用可能 {available_military:.1f}"
 
-        my_money = self._money_by_name(country.money_name)
-        rate = my_money.get_rate() if my_money else 1.0
-        if rate <= 0:
-            rate = 1.0
+        if require_resources:
+            available_military = self.get_country_available_military(country_name)
+            if available_military < cost_military:
+                return (
+                    False,
+                    f"軍事力が不足しています。必要 {cost_military:.1f} / 利用可能 {available_military:.1f}",
+                    country,
+                    cost_usd,
+                    cost_military,
+                )
+            if country.usd < cost_usd:
+                return (
+                    False,
+                    f"USDが不足しています。必要 {cost_usd:.1f} / 保有 {country.usd:.1f}",
+                    country,
+                    cost_usd,
+                    cost_military,
+                )
 
-        # 基軸通貨(USD)を優先し、不足分は自国通貨をUSD換算で支払う。
-        if country.usd >= cost_usd:
-            country.usd -= cost_usd
-        else:
-            remainder = cost_usd - country.usd
-            country.usd = 0.0
-            country.domestic_money -= remainder * rate
+        return True, "", country, cost_usd, cost_military
+
+    def get_claimable_tiles(self, country_name, require_resources=True):
+        options = self.get_claim_options(country_name, require_resources=require_resources)
+        return [
+            [int(x), int(y)]
+            for key, option in options.items()
+            if option["claimable"]
+            for x, y in [key.split(",", 1)]
+        ]
+
+    def get_claim_options(self, country_name, require_resources=True):
+        self.ensure_territory_map()
+        if self._country_by_name(country_name) is None:
+            return {}
+
+        options = {}
+        tiles = self.territory_map["tiles"]
+        for y, row in enumerate(tiles):
+            for x, cell in enumerate(row):
+                if cell != self.EMPTY_TILE:
+                    continue
+                ok, msg, _, cost_usd, cost_military = self._validate_claim_territory(
+                    country_name,
+                    x,
+                    y,
+                    require_resources=require_resources,
+                )
+                key = f"{x},{y}"
+                if ok:
+                    reason = f"占領可能です。消費: {cost_military:.1f} Military / {cost_usd:.1f} USD"
+                else:
+                    reason = msg
+                options[key] = {
+                    "claimable": ok,
+                    "reason": reason,
+                    "cost_usd": round(cost_usd, 1),
+                    "cost_military": round(cost_military, 1),
+                }
+        return options
+
+    def claim_territory(self, country_name, x, y):
+        ok, msg, country, cost_usd, cost_military = self._validate_claim_territory(
+            country_name,
+            x,
+            y,
+            require_resources=True,
+        )
+        if not ok:
+            return False, msg
+
+        country.usd -= cost_usd
 
         self.territory_map["military_committed"][country_name] = (
             self.territory_map["military_committed"].get(country_name, 0.0) + cost_military
@@ -569,6 +661,7 @@ class World:
 
         # このターンの貿易収支を一時記録する辞書を作成
         current_turn_trade_balance = {c.name: 0.0 for c in self.Country_list}
+        available_military_map = {c.name: self.get_country_available_military(c.name) for c in self.Country_list}
 
         
         # 2. 国際貿易
@@ -632,8 +725,8 @@ class World:
                 trade_volume = int(trade_scale * competitiveness_factor * sensitivity)
 
                 # --- 軍事力による交渉力 ---
-                mil_power_a = country_a.military.caluc_power()
-                mil_power_b = country_b.military.caluc_power()
+                mil_power_a = available_military_map.get(country_a.name, 0.0)
+                mil_power_b = available_military_map.get(country_b.name, 0.0)
                 mil_ratio = (mil_power_a + 1000) / (mil_power_b + 1000)
 
                 is_a_winner = (eff_industry_a > eff_industry_b)
