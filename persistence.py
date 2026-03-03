@@ -21,6 +21,7 @@ def init_db(db_path: str = DB_PATH) -> None:
                 index_base_turn INTEGER,
                 country_names_json TEXT NOT NULL,
                 money_names_json TEXT NOT NULL,
+                territory_map_json TEXT,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
             """
@@ -43,6 +44,9 @@ def init_db(db_path: str = DB_PATH) -> None:
             )
             """
         )
+        world_columns = {row[1] for row in conn.execute("PRAGMA table_info(world_state)")}
+        if "territory_map_json" not in world_columns:
+            conn.execute("ALTER TABLE world_state ADD COLUMN territory_map_json TEXT")
         conn.commit()
 
 
@@ -52,6 +56,7 @@ def save_world_state(
     index_base_turn: int,
     country_names: list[str],
     money_names: list[str],
+    territory_map: dict[str, Any] | None = None,
     conn: sqlite3.Connection | None = None,
     db_path: str = DB_PATH,
 ) -> None:
@@ -64,6 +69,7 @@ def save_world_state(
                 index_base_turn=index_base_turn,
                 country_names=country_names,
                 money_names=money_names,
+                territory_map=territory_map,
                 conn=owned_conn,
                 db_path=db_path,
             )
@@ -73,14 +79,15 @@ def save_world_state(
     conn.execute(
         """
         INSERT INTO world_state (
-            id, turn, turn_year, index_base_turn, country_names_json, money_names_json, updated_at
-        ) VALUES (1, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            id, turn, turn_year, index_base_turn, country_names_json, money_names_json, territory_map_json, updated_at
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
             turn=excluded.turn,
             turn_year=excluded.turn_year,
             index_base_turn=excluded.index_base_turn,
             country_names_json=excluded.country_names_json,
             money_names_json=excluded.money_names_json,
+            territory_map_json=excluded.territory_map_json,
             updated_at=CURRENT_TIMESTAMP
         """,
         (
@@ -89,6 +96,7 @@ def save_world_state(
             index_base_turn,
             json.dumps(country_names, ensure_ascii=False),
             json.dumps(money_names, ensure_ascii=False),
+            json.dumps(territory_map, ensure_ascii=False) if territory_map is not None else None,
         ),
     )
 
@@ -98,7 +106,7 @@ def load_world_state(db_path: str = DB_PATH) -> dict[str, Any] | None:
     with get_connection(db_path) as conn:
         row = conn.execute(
             """
-            SELECT turn, turn_year, index_base_turn, country_names_json, money_names_json
+            SELECT turn, turn_year, index_base_turn, country_names_json, money_names_json, territory_map_json
             FROM world_state
             WHERE id = 1
             """
@@ -113,6 +121,7 @@ def load_world_state(db_path: str = DB_PATH) -> dict[str, Any] | None:
         "index_base_turn": int(row[2]) if row[2] is not None else 50,
         "country_names": json.loads(row[3]) if row[3] else [],
         "money_names": json.loads(row[4]) if row[4] else [],
+        "territory_map": json.loads(row[5]) if len(row) > 5 and row[5] else None,
     }
 
 

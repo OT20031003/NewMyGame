@@ -1,9 +1,30 @@
 from Country import Country
 from Money import Money
+from collections import deque
 import math
+import random
 from persistence import get_connection, init_db, load_world_state, save_world_state
 
 class World:
+    SEA_TILE = "__SEA__"
+    EMPTY_TILE = ""
+    TERRITORY_COLOR_PALETTE = [
+        "#e63946",
+        "#1d3557",
+        "#2a9d8f",
+        "#e9c46a",
+        "#f4a261",
+        "#8ab17d",
+        "#264653",
+        "#6d597a",
+        "#577590",
+        "#bc4749",
+        "#4361ee",
+        "#7f5539",
+        "#118ab2",
+        "#ef476f",
+    ]
+
     # ★修正: index_base_turn 引数を追加 (デフォルト50)
     def __init__(self, turn_year, index_base_turn=50):
         self.Country_list = []
@@ -11,6 +32,7 @@ class World:
         self.turn_year = turn_year
         self.Money_list = []  # 通貨のリスト
         self.index_base_turn = index_base_turn # Currency Indexの基準ターン
+        self.territory_map = None
 
     def add_country(self, country):
         if isinstance(country, Country):
@@ -23,11 +45,398 @@ class World:
             self.Money_list.append(money)
         else:
             raise TypeError("Only instances of Money can be added.")
+
+    def _neighbors4(self, x, y, width, height):
+        if x > 0:
+            yield x - 1, y
+        if x + 1 < width:
+            yield x + 1, y
+        if y > 0:
+            yield x, y - 1
+        if y + 1 < height:
+            yield x, y + 1
+
+    def _country_by_name(self, country_name):
+        return next((c for c in self.Country_list if c.name == country_name), None)
+
+    def _money_by_name(self, money_name):
+        return next((m for m in self.Money_list if m.name == money_name), None)
+
+    def get_base_currency(self):
+        return next((m for m in self.Money_list if m.base_currency), None)
+
+    def _assign_country_colors(self, existing_colors=None):
+        colors = {}
+        if isinstance(existing_colors, dict):
+            for k, v in existing_colors.items():
+                if isinstance(k, str) and isinstance(v, str):
+                    colors[k] = v
+
+        for idx, country in enumerate(sorted(self.Country_list, key=lambda c: c.name)):
+            if country.name not in colors:
+                colors[country.name] = self.TERRITORY_COLOR_PALETTE[idx % len(self.TERRITORY_COLOR_PALETTE)]
+        return colors
+
+    def _country_has_any_territory(self, country_name):
+        if not self.territory_map:
+            return False
+        tiles = self.territory_map.get("tiles", [])
+        return any(country_name in row for row in tiles)
+
+    def _is_adjacent_to_country(self, x, y, country_name):
+        if not self.territory_map:
+            return False
+        width = self.territory_map.get("width", 0)
+        height = self.territory_map.get("height", 0)
+        tiles = self.territory_map.get("tiles", [])
+        for nx, ny in self._neighbors4(x, y, width, height):
+            if tiles[ny][nx] == country_name:
+                return True
+        return False
+
+    def _adjacent_enemy_count(self, x, y, country_name):
+        if not self.territory_map:
+            return 0
+        width = self.territory_map.get("width", 0)
+        height = self.territory_map.get("height", 0)
+        tiles = self.territory_map.get("tiles", [])
+        count = 0
+        for nx, ny in self._neighbors4(x, y, width, height):
+            owner = tiles[ny][nx]
+            if owner not in (self.EMPTY_TILE, self.SEA_TILE, country_name):
+                count += 1
+        return count
+
+    def _country_tile_positions(self):
+        positions = {c.name: [] for c in self.Country_list}
+        if not self.territory_map:
+            return positions
+        tiles = self.territory_map.get("tiles", [])
+        for y, row in enumerate(tiles):
+            for x, owner in enumerate(row):
+                if owner in positions:
+                    positions[owner].append((x, y))
+        return positions
+
+    def _country_gdp_base_currency(self, country_name):
+        country = self._country_by_name(country_name)
+        if country is None:
+            return 0.0
+        gdp_usd = country.get_gdp_usd()
+        if gdp_usd is not None and gdp_usd > 0:
+            return gdp_usd
+
+        money = self._money_by_name(country.money_name)
+        rate = money.get_rate() if money else 1.0
+        if rate <= 0:
+            rate = 1.0
+        estimated = country.caluc_gdp() / rate
+        return max(0.0, estimated)
+
+    def _weighted_neighbor_gdp(self, x, y, exclude_country=None):
+        positions = self._country_tile_positions()
+        weighted_sum = 0.0
+        weight_sum = 0.0
+
+        for cname, coords in positions.items():
+            if cname == exclude_country or not coords:
+                continue
+            min_dist = min(abs(x - cx) + abs(y - cy) for cx, cy in coords)
+            weight = 1.0 / (min_dist + 1.0)
+            gdp = self._country_gdp_base_currency(cname)
+            if gdp <= 0.0:
+                continue
+            weighted_sum += gdp * weight
+            weight_sum += weight
+
+        if weight_sum > 0.0:
+            return weighted_sum / weight_sum
+
+        fallbacks = []
+        for c in self.Country_list:
+            if c.name == exclude_country:
+                continue
+            gdp = self._country_gdp_base_currency(c.name)
+            if gdp > 0:
+                fallbacks.append(gdp)
+        if fallbacks:
+            return sum(fallbacks) / len(fallbacks)
+        return 0.0
+
+    def _is_adjacent_via_sea(self, x, y, country_name, max_sea_hops=3):
+        if not self.territory_map:
+            return False
+        width = self.territory_map.get("width", 0)
+        height = self.territory_map.get("height", 0)
+        tiles = self.territory_map.get("tiles", [])
+
+        queue = deque()
+        visited = set()
+
+        for nx, ny in self._neighbors4(x, y, width, height):
+            if tiles[ny][nx] == self.SEA_TILE:
+                queue.append((nx, ny, 1))
+                visited.add((nx, ny))
+
+        while queue:
+            sx, sy, depth = queue.popleft()
+            for nx, ny in self._neighbors4(sx, sy, width, height):
+                if tiles[ny][nx] == country_name:
+                    return True
+
+            if depth >= max_sea_hops:
+                continue
+
+            for nx, ny in self._neighbors4(sx, sy, width, height):
+                if tiles[ny][nx] == self.SEA_TILE and (nx, ny) not in visited:
+                    visited.add((nx, ny))
+                    queue.append((nx, ny, depth + 1))
+
+        return False
+
+    def territory_cell_cost(self, country_name, x, y):
+        regional_weighted_avg_gdp = self._weighted_neighbor_gdp(x, y, exclude_country=country_name)
+        base_currency_cost = max(0.0, regional_weighted_avg_gdp * 0.20)
+        enemy_adjacent = self._adjacent_enemy_count(x, y, country_name)
+        military_cost = 1.5 + enemy_adjacent * 1.5
+        return base_currency_cost, military_cost
+
+    def normalize_territory_map(self):
+        if not isinstance(self.territory_map, dict):
+            self.territory_map = None
+            return
+
+        width = int(self.territory_map.get("width", 0))
+        height = int(self.territory_map.get("height", 0))
+        tiles = self.territory_map.get("tiles", [])
+        if width <= 0 or height <= 0 or len(tiles) != height:
+            self.territory_map = None
+            return
+
+        valid_owners = {c.name for c in self.Country_list}
+        normalized_tiles = []
+        for row in tiles:
+            if not isinstance(row, list) or len(row) != width:
+                self.territory_map = None
+                return
+            normalized_row = []
+            for cell in row:
+                if cell == self.SEA_TILE:
+                    normalized_row.append(self.SEA_TILE)
+                elif isinstance(cell, str) and (cell == self.EMPTY_TILE or cell in valid_owners):
+                    normalized_row.append(cell)
+                else:
+                    normalized_row.append(self.EMPTY_TILE)
+            normalized_tiles.append(normalized_row)
+
+        committed = self.territory_map.get("military_committed", {})
+        normalized_committed = {}
+        if isinstance(committed, dict):
+            for country in self.Country_list:
+                try:
+                    normalized_committed[country.name] = max(0.0, float(committed.get(country.name, 0.0)))
+                except (TypeError, ValueError):
+                    normalized_committed[country.name] = 0.0
+        else:
+            for country in self.Country_list:
+                normalized_committed[country.name] = 0.0
+
+        self.territory_map = {
+            "width": width,
+            "height": height,
+            "tiles": normalized_tiles,
+            "country_colors": self._assign_country_colors(self.territory_map.get("country_colors")),
+            "military_committed": normalized_committed,
+            "seed": self.territory_map.get("seed"),
+        }
+
+    def ensure_territory_map(self):
+        if self.territory_map is None:
+            self.generate_territory_map()
+        else:
+            self.normalize_territory_map()
+            if self.territory_map is None:
+                self.generate_territory_map()
+        return self.territory_map
+
+    def generate_territory_map(self, width=28, height=16, seed=None):
+        if width < 12:
+            width = 12
+        if height < 8:
+            height = 8
+
+        rng = random.Random(seed)
+        scores = [[0.0 for _ in range(width)] for _ in range(height)]
+        blob_count = max(4, min(10, (width * height) // 60))
+        base_radius = min(width, height) * 0.35
+
+        for _ in range(blob_count):
+            cx = rng.uniform(-0.15 * width, 1.15 * width)
+            cy = rng.uniform(-0.2 * height, 1.2 * height)
+            radius = rng.uniform(base_radius * 0.6, base_radius * 1.35)
+            weight = rng.uniform(0.9, 1.6)
+            for y in range(height):
+                for x in range(width):
+                    dist = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+                    if dist < radius:
+                        scores[y][x] += (1.0 - dist / radius) * weight
+
+        threshold = 0.95
+        land_mask = [[False for _ in range(width)] for _ in range(height)]
+        target_min = 0.40
+        target_max = 0.74
+        min_span = max(1.0, min(width, height) * 0.5)
+
+        for _ in range(7):
+            land_count = 0
+            for y in range(height):
+                for x in range(width):
+                    edge_distance = min(x, width - 1 - x, y, height - 1 - y)
+                    edge_boost = edge_distance / min_span
+                    noise = rng.uniform(-0.20, 0.20)
+                    is_land = (scores[y][x] + edge_boost + noise) > threshold
+                    land_mask[y][x] = is_land
+                    if is_land:
+                        land_count += 1
+            ratio = land_count / float(width * height)
+            if target_min <= ratio <= target_max:
+                break
+            if ratio < target_min:
+                threshold -= 0.08
+            else:
+                threshold += 0.08
+
+        tiles = [
+            [self.EMPTY_TILE if land_mask[y][x] else self.SEA_TILE for x in range(width)]
+            for y in range(height)
+        ]
+
+        land_cells = [(x, y) for y in range(height) for x in range(width) if tiles[y][x] == self.EMPTY_TILE]
+        country_names = [c.name for c in self.Country_list]
+        seed_positions = {}
+        available = land_cells[:]
+
+        if available and country_names:
+            rng.shuffle(available)
+            for idx, country_name in enumerate(country_names):
+                if not available:
+                    break
+                if idx == 0 or not seed_positions:
+                    pos = available.pop()
+                else:
+                    sample = available if len(available) <= 180 else rng.sample(available, 180)
+                    pos = max(
+                        sample,
+                        key=lambda p: min(abs(p[0] - sx) + abs(p[1] - sy) for sx, sy in seed_positions.values()),
+                    )
+                    available.remove(pos)
+                seed_positions[country_name] = pos
+                tiles[pos[1]][pos[0]] = country_name
+
+        for country_name, pos in seed_positions.items():
+            target_cells = rng.randint(2, 4)
+            owned = [pos]
+            for _ in range(target_cells - 1):
+                frontier = []
+                for ox, oy in owned:
+                    for nx, ny in self._neighbors4(ox, oy, width, height):
+                        if tiles[ny][nx] == self.EMPTY_TILE and (nx, ny) not in frontier:
+                            frontier.append((nx, ny))
+                if not frontier:
+                    break
+                nx, ny = rng.choice(frontier)
+                tiles[ny][nx] = country_name
+                owned.append((nx, ny))
+
+        missing = [name for name in country_names if not any(name in row for row in tiles)]
+        for country_name in missing:
+            candidates = [(x, y) for y in range(height) for x in range(width) if tiles[y][x] == self.EMPTY_TILE]
+            if not candidates:
+                break
+            x, y = rng.choice(candidates)
+            tiles[y][x] = country_name
+
+        self.territory_map = {
+            "width": width,
+            "height": height,
+            "tiles": tiles,
+            "country_colors": self._assign_country_colors(),
+            "military_committed": {c.name: 0.0 for c in self.Country_list},
+            "seed": seed,
+        }
+        return self.territory_map
+
+    def get_territory_counts(self):
+        self.ensure_territory_map()
+        counts = {c.name: 0 for c in self.Country_list}
+        tiles = self.territory_map["tiles"]
+        for row in tiles:
+            for owner in row:
+                if owner in counts:
+                    counts[owner] += 1
+        return counts
+
+    def get_country_available_military(self, country_name):
+        self.ensure_territory_map()
+        country = self._country_by_name(country_name)
+        if country is None:
+            return 0.0
+        committed = self.territory_map["military_committed"].get(country_name, 0.0)
+        return max(0.0, country.military.caluc_power() - committed)
+
+    def claim_territory(self, country_name, x, y):
+        self.ensure_territory_map()
+        width = self.territory_map["width"]
+        height = self.territory_map["height"]
+
+        if x < 0 or y < 0 or x >= width or y >= height:
+            return False, "指定したマスは地図の範囲外です。"
+
+        cell = self.territory_map["tiles"][y][x]
+        if cell == self.SEA_TILE:
+            return False, "海マスは獲得できません。"
+        if cell != self.EMPTY_TILE:
+            return False, "そのマスはすでに他国領です。"
+
+        country = self._country_by_name(country_name)
+        if country is None:
+            return False, "対象の国が見つかりません。"
+
+        if self._country_has_any_territory(country_name):
+            direct_adjacent = self._is_adjacent_to_country(x, y, country_name)
+            sea_adjacent = self._is_adjacent_via_sea(x, y, country_name)
+            if not direct_adjacent and not sea_adjacent:
+                return False, "占領は自国領に隣接する空き地、または海越し隣接マスのみ可能です。"
+
+        cost_usd, cost_military = self.territory_cell_cost(country_name, x, y)
+        available_military = self.get_country_available_military(country_name)
+        if available_military < cost_military:
+            return False, f"軍事力が不足しています。必要 {cost_military:.1f} / 利用可能 {available_military:.1f}"
+
+        my_money = self._money_by_name(country.money_name)
+        rate = my_money.get_rate() if my_money else 1.0
+        if rate <= 0:
+            rate = 1.0
+
+        # 基軸通貨(USD)を優先し、不足分は自国通貨をUSD換算で支払う。
+        if country.usd >= cost_usd:
+            country.usd -= cost_usd
+        else:
+            remainder = cost_usd - country.usd
+            country.usd = 0.0
+            country.domestic_money -= remainder * rate
+
+        self.territory_map["military_committed"][country_name] = (
+            self.territory_map["military_committed"].get(country_name, 0.0) + cost_military
+        )
+        self.territory_map["tiles"][y][x] = country_name
+        return True, f"{country_name} が領土を拡大しました。消費: {cost_military:.1f} Military / {cost_usd:.1f} USD"
         
     def save(self):
         init_db()
         country_names = [c.name for c in self.Country_list]
         money_names = [m.name for m in self.Money_list]
+        self.ensure_territory_map()
 
         with get_connection() as conn:
             conn.execute("BEGIN")
@@ -37,6 +446,7 @@ class World:
                 index_base_turn=self.index_base_turn,
                 country_names=country_names,
                 money_names=money_names,
+                territory_map=self.territory_map,
                 conn=conn,
             )
             for country in self.Country_list:
@@ -75,6 +485,7 @@ class World:
         self.turn = state["turn"]
         self.turn_year = state["turn_year"]
         self.index_base_turn = state["index_base_turn"]
+        self.territory_map = state.get("territory_map")
 
         for cname in state["country_names"]:
             c1 = Country(cname, "d", -1, 1, 1)
@@ -87,6 +498,10 @@ class World:
             if not m1.load(mname):
                 return False
             self.add_money(m1)
+
+        self.normalize_territory_map()
+        if self.territory_map is None:
+            self.generate_territory_map()
         return True
             
     def Next_turn(self):

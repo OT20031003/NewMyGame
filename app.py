@@ -74,6 +74,7 @@ def setup_new_world():
         world.add_money(money)
     for country in default_countries():
         world.add_country(country)
+    world.generate_territory_map()
 
 
 # 初期化関数
@@ -83,6 +84,8 @@ def initialize_world(load_existing):
     loaded = world.load() if load_existing else False
     if not loaded:
         setup_new_world()
+    else:
+        world.ensure_territory_map()
     # Load時はWorldが再作成されない場合があるので、変数を強制的にセット
     world.index_base_turn = CURRENCY_INDEX_BASE_TURN
     mp = {"exe":True}
@@ -468,6 +471,52 @@ def budget_decision_index():
         turn=world.turn,
         turn_year=turn_year
     )
+
+@app.route('/world_map')
+def world_map():
+    message = request.args.get("message", "")
+    world_map_data = world.ensure_territory_map()
+    base_money = world.get_base_currency()
+    territory_counts = world.get_territory_counts()
+    countries = []
+    for country in world.Country_list:
+        available_military = world.get_country_available_military(country.name)
+        countries.append({
+            "name": country.name,
+            "money_name": country.money_name,
+            "territory_count": territory_counts.get(country.name, 0),
+            "available_military": available_military,
+            "usd": country.usd,
+        })
+
+    countries = sorted(countries, key=lambda c: c["name"])
+    selected_country = request.args.get("selected_country", "")
+    valid_names = {c["name"] for c in countries}
+    if selected_country not in valid_names and countries:
+        selected_country = countries[0]["name"]
+
+    return render_template(
+        'world_map.html',
+        map_data=world_map_data,
+        countries=countries,
+        base_currency_name=base_money.name if base_money else "USD",
+        message=message,
+        selected_country=selected_country,
+    )
+
+@app.route('/world_map/claim', methods=['POST'])
+def claim_world_map():
+    country_name = request.form.get("country_name", "")
+    try:
+        x = int(request.form.get("x", "-1"))
+        y = int(request.form.get("y", "-1"))
+    except ValueError:
+        return redirect(url_for('world_map', message="座標が不正です。", selected_country=country_name))
+
+    success, msg = world.claim_territory(country_name, x, y)
+    if success:
+        world.save()
+    return redirect(url_for('world_map', message=msg, selected_country=country_name))
 
 @app.route('/country/<name>')
 def show_country(name):

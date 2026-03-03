@@ -458,6 +458,9 @@
                         <a href="{{ url_for('quit') }}" id="saveBtn" class="btn btn-glass">
                             <i class="fas fa-save"></i> Save
                         </a>
+                        <a href="{{ url_for('world_map') }}" class="btn btn-glass">
+                            <i class="fas fa-map"></i> 世界地図
+                        </a>
                         {% if turn % turn_year == 0 %}
                         <a href="{{ url_for('budget_decision_index') }}" class="btn btn-glass">
                             <i class="fas fa-landmark"></i> Budget
