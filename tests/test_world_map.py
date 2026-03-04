@@ -345,6 +345,22 @@ class WorldMapTests(unittest.TestCase):
         self.assertLess(alpha.usd, before_usd)
         self.assertGreater(world.territory_map["military_committed"]["Alpha"], 0.0)
 
+    def test_ai_candidate_tiles_match_claimable_tiles_without_resources(self):
+        world = self._build_world()
+        world.territory_map = {
+            "width": 5,
+            "height": 1,
+            "tiles": [["", "Alpha", "__SEA__", "", "Beta"]],
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        expected = {tuple(xy) for xy in world.get_claimable_tiles("Alpha", require_resources=False)}
+        actual = set(world._candidate_claim_tiles("Alpha"))
+
+        self.assertEqual(actual, expected)
+
     def test_ai_auto_expand_skips_player_country(self):
         world = self._build_world()
         alpha = world._country_by_name("Alpha")

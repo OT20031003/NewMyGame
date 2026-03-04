@@ -1,4 +1,7 @@
 import math, random
+import os
+
+DEBUG_LOGS = os.getenv("MYGAME_DEBUG_LOGS", "0") == "1"
 
 class CurrencyRate:
     def __init__(self, currency: str, rate: float):
@@ -94,14 +97,15 @@ class CurrencyRate:
         prev_rate = self.past_rates[-1]
         self.rate = prev_rate * (1 + total_change + random_noise)
 
-        print(f"--- {self.currency} ---")
-        print(f"  Inflation Diff: {inflation_diff*100:.2f}% -> Base Change: {inflation_diff:.4f}")
-        print(f"  Real Int Diff: {real_interest_diff:.2f}% -> Effect: {-interest_effect:.4f}")
-        print(f"  Real Growth Diff: {real_growth_diff:.2f}% -> Effect: {-growth_effect:.4f}")
-        print(f"  GDP/Capita Diff Ratio: {gdp_capita_ratio:.2f} -> Effect: {-gdp_capita_effect:.4f}")
-        print(f"  Intervention: {intervention_ratio:.2f}% -> Effect: {intervention_effect:.4f}")
-        print(f"  Total Change: {total_change:.4f}")
-        print(f"  New Rate: {self.rate:.2f}")
+        if DEBUG_LOGS:
+            print(f"--- {self.currency} ---")
+            print(f"  Inflation Diff: {inflation_diff*100:.2f}% -> Base Change: {inflation_diff:.4f}")
+            print(f"  Real Int Diff: {real_interest_diff:.2f}% -> Effect: {-interest_effect:.4f}")
+            print(f"  Real Growth Diff: {real_growth_diff:.2f}% -> Effect: {-growth_effect:.4f}")
+            print(f"  GDP/Capita Diff Ratio: {gdp_capita_ratio:.2f} -> Effect: {-gdp_capita_effect:.4f}")
+            print(f"  Intervention: {intervention_ratio:.2f}% -> Effect: {intervention_effect:.4f}")
+            print(f"  Total Change: {total_change:.4f}")
+            print(f"  New Rate: {self.rate:.2f}")
 
         # 安全策
         if self.rate <= 0.01:

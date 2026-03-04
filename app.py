@@ -4,7 +4,10 @@ from Country import Country
 from World import World
 from Money import Money
 import random
+import os
 app = Flask(__name__)
+
+DEBUG_LOGS = os.getenv("MYGAME_DEBUG_LOGS", "0") == "1"
 
 # グローバルなWorldオブジェクト
 turn_year = 3
@@ -172,7 +175,8 @@ def toggle_operation(name):
     if target_country:
         # フラグを反転 (True -> False, False -> True)
         target_country.selfoperation = not target_country.selfoperation
-        print(f"{target_country.name} operation mode switched to: {'AI' if target_country.selfoperation else 'Player'}")
+        if DEBUG_LOGS:
+            print(f"{target_country.name} operation mode switched to: {'AI' if target_country.selfoperation else 'Player'}")
     
     # indexに戻る
     return redirect(url_for('index'))
@@ -182,7 +186,8 @@ def advance_turn():
     # --- 1. ユーザー入力の取得処理 ---
     turn_count = int(request.form.get('turn_count', 1))
     interest_inputs = {}
-    print(f"app.py World turn: {world.turn + 1} へ移行")
+    if DEBUG_LOGS:
+        print(f"app.py World turn: {world.turn + 1} へ移行")
 
     # 各国の為替介入入力の取得と実行部分
     for country in world.Country_list:
@@ -263,7 +268,8 @@ def advance_turn():
                 if b_total_pop > 0:
                     base_gdp_per_capita_usd = b_total_gdp_usd / b_total_pop
         
-        print(f"#### Base(USD) - Inf: {base_inflation:.2f}%, Growth: {base_gdp_growth:.2f}%, Trade/GDP: {base_trade_balance_ratio:.2f}%, GDP/Cap: {base_gdp_per_capita_usd:.0f}")
+        if DEBUG_LOGS:
+            print(f"#### Base(USD) - Inf: {base_inflation:.2f}%, Growth: {base_gdp_growth:.2f}%, Trade/GDP: {base_trade_balance_ratio:.2f}%, GDP/Cap: {base_gdp_per_capita_usd:.0f}")
 
         # --- 2. 各通貨の更新 ---
         for money in world.Money_list:
@@ -704,7 +710,8 @@ def update_tariff():
     country = next((c for c in world.Country_list if c.name == country_name), None)
     if country:
         country.set_tariff(target_name, tariff_rate_val)
-        print(f"Updated Tariff: {country.name} -> {target_name} : {tariff_rate}%")
+        if DEBUG_LOGS:
+            print(f"Updated Tariff: {country.name} -> {target_name} : {tariff_rate}%")
         
     return redirect(url_for('show_country', name=country_name))
 

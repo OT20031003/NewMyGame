@@ -2,7 +2,10 @@ from Country import Country
 from Money import Money
 import math
 import random
+import os
 from persistence import get_connection, init_db, load_world_state, save_world_state
+
+DEBUG_LOGS = os.getenv("MYGAME_DEBUG_LOGS", "0") == "1"
 
 class World:
     SEA_TILE = "__SEA__"
@@ -526,20 +529,66 @@ class World:
         return True, f"{country_name} が領土を拡大しました。消費: {cost_military:.1f} Military / {cost_usd:.1f} USD"
 
     def _select_ai_claim_target(self, country_name):
-        claimable_tiles = self.get_claimable_tiles(country_name, require_resources=True)
-        if not claimable_tiles:
+        candidate_tiles = self._candidate_claim_tiles(country_name)
+        if not candidate_tiles:
             return None
 
         best = None
         best_score = None
-        for x, y in claimable_tiles:
-            cost_usd, cost_military = self.territory_cell_cost(country_name, x, y)
+        for x, y in candidate_tiles:
+            ok, _msg, _country, cost_usd, cost_military = self._validate_claim_territory(
+                country_name,
+                x,
+                y,
+                require_resources=True,
+            )
+            if not ok:
+                continue
             enemy_adjacent = self._adjacent_enemy_count(x, y, country_name)
             score = (cost_military, cost_usd, -enemy_adjacent, y, x)
             if best_score is None or score < best_score:
                 best_score = score
                 best = (x, y, cost_usd, cost_military)
         return best
+
+    def _candidate_claim_tiles(self, country_name):
+        self.ensure_territory_map()
+        width = self.territory_map["width"]
+        height = self.territory_map["height"]
+        tiles = self.territory_map["tiles"]
+
+        if not self._country_has_any_territory(country_name):
+            all_empty = []
+            for y, row in enumerate(tiles):
+                for x, cell in enumerate(row):
+                    if cell == self.EMPTY_TILE:
+                        all_empty.append((x, y))
+            return all_empty
+
+        positions = self._country_tile_positions().get(country_name, [])
+        candidates = set()
+
+        for tx, ty in positions:
+            for nx, ny in self._neighbors4(tx, ty, width, height):
+                if tiles[ny][nx] == self.EMPTY_TILE:
+                    candidates.add((nx, ny))
+
+            for dx, dy in self._directions8():
+                cx = tx + dx
+                cy = ty + dy
+                sea_len = 0
+                while 0 <= cx < width and 0 <= cy < height:
+                    cell = tiles[cy][cx]
+                    if cell == self.SEA_TILE:
+                        sea_len += 1
+                        cx += dx
+                        cy += dy
+                        continue
+                    if sea_len >= 1 and cell == self.EMPTY_TILE:
+                        candidates.add((cx, cy))
+                    break
+
+        return list(candidates)
 
     def auto_expand_territory_for_ai(self, max_claims_per_country=1):
         self.ensure_territory_map()
@@ -840,7 +889,8 @@ class World:
         if self.turn == self.index_base_turn:
             for m in self.Money_list:
                 m.base_index_rate = m.get_rate()
-                print(f"Captured Base Rate for {m.name}: {m.base_index_rate}")
+                if DEBUG_LOGS:
+                    print(f"Captured Base Rate for {m.name}: {m.base_index_rate}")
 
         if self.turn >= self.index_base_turn:
             # 基軸通貨(USD)とそれ以外を分ける

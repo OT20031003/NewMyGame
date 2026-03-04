@@ -1,4 +1,5 @@
 import random
+import os
 from Budget import Budget
 from CountryPower import CountryPower
 from Satisfaction import Satisfaction
@@ -7,6 +8,8 @@ from Salary import Salary
 from Price import Price
 from Money import Money
 from persistence import init_db, load_country_state, save_country_state
+
+DEBUG_LOGS = os.getenv("MYGAME_DEBUG_LOGS", "0") == "1"
 
 class Country:
     def __init__(self, name, money_name, turn_year, population_p, salary_p, initial_price=100.0, selfoperation=False, industry_p=0.0, military_p=0.0):
@@ -217,7 +220,8 @@ class Country:
                 self.domestic_money -= required_domestic
                 self.add_log(turn, "Intervention", f"Sell USD: {amount_usd:+.0f} $")
             else:
-                print(f"{self.name}: USD不足のため介入できませんでした。")
+                if DEBUG_LOGS:
+                    print(f"{self.name}: USD不足のため介入できませんでした。")
                 return 
         self.turn_intervention_usd += amount_usd
 
@@ -734,7 +738,8 @@ class Country:
 
         # ログ出力（デバッグ用）
         if tariff_inflation_pressure > 0.1:
-            print(f"[{self.name}] Tariff Cost: {self.turn_tariff_cost_usd:.1f} USD, Inflation Pressure: +{tariff_inflation_pressure:.2f}%")
+            if DEBUG_LOGS:
+                print(f"[{self.name}] Tariff Cost: {self.turn_tariff_cost_usd:.1f} USD, Inflation Pressure: +{tariff_inflation_pressure:.2f}%")
 
         # 計算が終わったら累積コストをリセット（次の貿易フェーズで再計算されるため）
         self.turn_tariff_cost_usd = 0.0
