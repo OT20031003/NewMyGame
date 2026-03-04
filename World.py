@@ -234,7 +234,8 @@ class World:
     def territory_cell_cost(self, country_name, x, y):
         regional_weighted_avg_gdp = self._weighted_neighbor_gdp(x, y, exclude_country=country_name)
         base_currency_cost = max(0.0, regional_weighted_avg_gdp * 0.20)
-        military_cost = max(0.0, self._weighted_neighbor_military(x, y, exclude_country=country_name))
+        weighted_military_avg = self._weighted_neighbor_military(x, y, exclude_country=country_name)
+        military_cost = max(0.0, weighted_military_avg * 0.50)
         return base_currency_cost, military_cost
 
     def normalize_territory_map(self):
@@ -523,6 +524,48 @@ class World:
         )
         self.territory_map["tiles"][y][x] = country_name
         return True, f"{country_name} が領土を拡大しました。消費: {cost_military:.1f} Military / {cost_usd:.1f} USD"
+
+    def _select_ai_claim_target(self, country_name):
+        claimable_tiles = self.get_claimable_tiles(country_name, require_resources=True)
+        if not claimable_tiles:
+            return None
+
+        best = None
+        best_score = None
+        for x, y in claimable_tiles:
+            cost_usd, cost_military = self.territory_cell_cost(country_name, x, y)
+            enemy_adjacent = self._adjacent_enemy_count(x, y, country_name)
+            score = (cost_military, cost_usd, -enemy_adjacent, y, x)
+            if best_score is None or score < best_score:
+                best_score = score
+                best = (x, y, cost_usd, cost_military)
+        return best
+
+    def auto_expand_territory_for_ai(self, max_claims_per_country=1):
+        self.ensure_territory_map()
+        if max_claims_per_country <= 0:
+            return []
+
+        results = []
+        for country in self.Country_list:
+            if not getattr(country, "selfoperation", False):
+                continue
+
+            claims_done = 0
+            while claims_done < max_claims_per_country:
+                target = self._select_ai_claim_target(country.name)
+                if target is None:
+                    break
+
+                x, y, _cost_usd, _cost_military = target
+                ok, msg = self.claim_territory(country.name, x, y)
+                if not ok:
+                    break
+
+                results.append({"country_name": country.name, "x": x, "y": y, "message": msg})
+                claims_done += 1
+
+        return results
         
     def save(self):
         init_db()
@@ -658,6 +701,9 @@ class World:
                         corrected_price = max(0.01, prev_price * (1.0 + synced_inf))
                         c.price.past_price[-1] = corrected_price # 履歴の最後（今ターン）を上書き
         # ================================================================
+
+        # AIモードの国は毎ターン自動で領土拡大を試みる（1ターン1マス）
+        self.auto_expand_territory_for_ai(max_claims_per_country=1)
 
         # このターンの貿易収支を一時記録する辞書を作成
         current_turn_trade_balance = {c.name: 0.0 for c in self.Country_list}

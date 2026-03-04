@@ -254,7 +254,7 @@ class WorldMapTests(unittest.TestCase):
         expected_weighted = (300.0 * (1.0 / 2.0) + 100.0 * (1.0 / 5.0)) / ((1.0 / 2.0) + (1.0 / 5.0))
         self.assertAlmostEqual(cost_usd, expected_weighted * 0.20, places=6)
         expected_weighted_military = (30.0 * (1.0 / 2.0) + 25.0 * (1.0 / 5.0)) / ((1.0 / 2.0) + (1.0 / 5.0))
-        self.assertAlmostEqual(cost_military, expected_weighted_military, places=6)
+        self.assertAlmostEqual(cost_military, expected_weighted_military * 0.50, places=6)
 
     def test_claim_territory_fails_when_usd_short(self):
         world = self._build_world()
@@ -319,6 +319,63 @@ class WorldMapTests(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertIn("軍事力", message)
+
+    def test_ai_auto_expand_claims_tile_for_selfoperation_country(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        beta = world._country_by_name("Beta")
+        gamma = world._country_by_name("Gamma")
+        beta.selfoperation = False
+        gamma.selfoperation = False
+        alpha.usd = 1_000_000_000_000.0
+        before_usd = alpha.usd
+        world.territory_map = {
+            "width": 4,
+            "height": 1,
+            "tiles": [["Alpha", "", "Beta", "Gamma"]],
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        results = world.auto_expand_territory_for_ai(max_claims_per_country=1)
+
+        self.assertEqual(world.territory_map["tiles"][0][1], "Alpha")
+        self.assertTrue(any(r["country_name"] == "Alpha" for r in results))
+        self.assertLess(alpha.usd, before_usd)
+        self.assertGreater(world.territory_map["military_committed"]["Alpha"], 0.0)
+
+    def test_ai_auto_expand_skips_player_country(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        beta = world._country_by_name("Beta")
+        gamma = world._country_by_name("Gamma")
+        alpha.selfoperation = False
+        beta.selfoperation = False
+        gamma.selfoperation = False
+        world.territory_map = {
+            "width": 4,
+            "height": 1,
+            "tiles": [["Alpha", "", "Beta", "Gamma"]],
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        results = world.auto_expand_territory_for_ai(max_claims_per_country=1)
+
+        self.assertEqual(world.territory_map["tiles"][0][1], world.EMPTY_TILE)
+        self.assertEqual(world.territory_map["military_committed"]["Alpha"], 0.0)
+        self.assertEqual(results, [])
+
+    def test_next_turn_calls_ai_auto_expand(self):
+        world = self._build_world()
+        calls = []
+        world.auto_expand_territory_for_ai = lambda max_claims_per_country=1: calls.append(max_claims_per_country) or []
+
+        world.Next_turn()
+
+        self.assertEqual(calls, [1])
 
 
 if __name__ == "__main__":
