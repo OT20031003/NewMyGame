@@ -3,6 +3,7 @@ from Money import Money
 import math
 import random
 import os
+from number_format import format_ja_units
 from persistence import get_connection, init_db, load_world_state, save_world_state
 
 DEBUG_LOGS = os.getenv("MYGAME_DEBUG_LOGS", "0") == "1"
@@ -26,6 +27,12 @@ class World:
         "#118ab2",
         "#ef476f",
     ]
+    MIN_TILE_POWER = 1
+    MAX_TILE_POWER = 250
+    REINFORCE_GDP_RATIO = 0.10
+    BASE_AUTO_INTERVENTION_INTERVAL = 5
+    BASE_AUTO_INTERVENTION_EPSILON = 0.5
+    TERRITORY_EVENT_LOG_LIMIT = 600
 
     # ★修正: index_base_turn 引数を追加 (デフォルト50)
     def __init__(self, turn_year, index_base_turn=50):
@@ -35,7 +42,168 @@ class World:
         self.Money_list = []  # 通貨のリスト
         self.index_base_turn = index_base_turn # Currency Indexの基準ターン
         self.territory_map = None
+        env_interval = os.getenv("MYGAME_BASE_AUTO_INTERVENTION_INTERVAL")
+        try:
+            interval = int(env_interval) if env_interval is not None else self.BASE_AUTO_INTERVENTION_INTERVAL
+        except (TypeError, ValueError):
+            interval = self.BASE_AUTO_INTERVENTION_INTERVAL
+        self.base_auto_intervention_interval = max(1, interval)
+        self.base_auto_intervention_epsilon = self.BASE_AUTO_INTERVENTION_EPSILON
 
+    def _normalize_territory_event_logs(self, raw_logs):
+        normalized = []
+        if not isinstance(raw_logs, list):
+            return normalized
+
+        # 古いログを間引いてから正規化してコストを一定に保つ
+        scan_source = raw_logs[-(self.TERRITORY_EVENT_LOG_LIMIT * 2):]
+        for row in scan_source:
+            if not isinstance(row, dict):
+                continue
+
+            country = row.get("country")
+            action = row.get("action")
+            try:
+                turn = int(row.get("turn", 0))
+                x = int(row.get("x", -1))
+                y = int(row.get("y", -1))
+            except (TypeError, ValueError):
+                continue
+
+            if not isinstance(country, str) or country == "":
+                continue
+            if action not in ("claim", "reinforce"):
+                continue
+
+            item = {
+                "turn": max(0, turn),
+                "country": country,
+                "action": action,
+                "x": x,
+                "y": y,
+            }
+            if "power_before" in row:
+                try:
+                    item["power_before"] = int(row["power_before"])
+                except (TypeError, ValueError):
+                    pass
+            if "power_after" in row:
+                try:
+                    item["power_after"] = int(row["power_after"])
+                except (TypeError, ValueError):
+                    pass
+            normalized.append(item)
+
+        if len(normalized) > self.TERRITORY_EVENT_LOG_LIMIT:
+            normalized = normalized[-self.TERRITORY_EVENT_LOG_LIMIT:]
+        return normalized
+
+    def _append_territory_event_log(self, country_name, action, x, y, **extra):
+        if not self.territory_map:
+            return
+
+        logs = self.territory_map.get("event_logs")
+        if not isinstance(logs, list):
+            logs = []
+            self.territory_map["event_logs"] = logs
+
+        event = {
+            "turn": int(self.turn),
+            "country": country_name,
+            "action": action,
+            "x": int(x),
+            "y": int(y),
+        }
+        for key in ("power_before", "power_after"):
+            if key in extra and extra[key] is not None:
+                try:
+                    event[key] = int(extra[key])
+                except (TypeError, ValueError):
+                    continue
+
+        logs.append(event)
+        overflow = len(logs) - self.TERRITORY_EVENT_LOG_LIMIT
+        if overflow > 0:
+            del logs[:overflow]
+
+    def _auto_intervene_base_currency_domestic(self):
+        """
+        基軸通貨国のみ、一定ターンごとに Domestic を 0 に寄せる自動介入を実行する。
+        O(国数) で軽量に処理するため、該当ターン以外は即returnする。
+        """
+        if self.turn <= 0:
+            return
+        if self.turn % self.base_auto_intervention_interval != 0:
+            return
+
+        base_money = self.get_base_currency()
+        if base_money is None:
+            return
+        current_rate = base_money.get_rate()
+        if current_rate <= 0:
+            return
+
+        eps = self.base_auto_intervention_epsilon
+        safe_rate = current_rate + 0.00001
+        for country in self.Country_list:
+            if country.money_name != base_money.name:
+                continue
+
+            domestic = country.domestic_money
+            if abs(domestic) <= eps:
+                country.domestic_money = 0.0
+                continue
+
+            if domestic > 0:
+                # Domestic余剰は USD買いで吸収
+                amount_usd = domestic / safe_rate
+            else:
+                # Domestic不足は USD売りで補填（USD不足時は可能な範囲のみ）
+                required_usd = (-domestic) / safe_rate
+                amount_usd = -min(country.usd, required_usd)
+                if amount_usd == 0:
+                    continue
+
+            # 自動介入は為替計算へ影響させないため、manual介入カウンタは使わず直接残高反映する
+            country.usd += amount_usd
+            country.domestic_money -= amount_usd * current_rate
+            country.fx_neutral_intervention_usd += amount_usd
+            if abs(country.domestic_money) <= eps:
+                country.domestic_money = 0.0
+
+    def _auto_cover_ai_negative_fx_reserves(self):
+        """
+        AIモードかつ基軸通貨国に限定し、FX(USD)が -GDP_USD を下回った場合に
+        通常の介入ロジックで USD を買い戻す。
+        """
+        base_money = self.get_base_currency()
+        if base_money is None:
+            return
+
+        for country in self.Country_list:
+            if not getattr(country, "selfoperation", False):
+                continue
+            if country.money_name != base_money.name:
+                continue
+            if country.usd >= 0:
+                continue
+
+            gdp_usd = self._country_gdp_base_currency(country.name)
+            if gdp_usd <= 0:
+                continue
+            if abs(country.usd) <= gdp_usd:
+                continue
+
+            money = self._money_by_name(country.money_name)
+            if money is None:
+                continue
+            current_rate = money.get_rate()
+            if current_rate <= 0:
+                continue
+
+            amount_usd = abs(country.usd) / 5.0
+            country.intervene(amount_usd, current_rate, self.turn)
+            
     def add_country(self, country):
         if isinstance(country, Country):
             self.Country_list.append(country)
@@ -126,6 +294,32 @@ class World:
                 if owner in positions:
                     positions[owner].append((x, y))
         return positions
+
+    def _terrain_power_from_score(self, score):
+        # 地形スコアをもとに 1〜4 の初期Powerを与える
+        normalized = max(0.0, min(1.0, score / 3.2))
+        return int(self.MIN_TILE_POWER + round(normalized * 3.0))
+
+    def _clamp_tile_power(self, value, owner):
+        if owner == self.SEA_TILE:
+            return 0
+        if owner == self.EMPTY_TILE:
+            return 0
+        return max(self.MIN_TILE_POWER, min(self.MAX_TILE_POWER, int(value)))
+
+    def _get_tile_power_value(self, x, y):
+        if not self.territory_map:
+            return 0
+        tile_power = self.territory_map.get("tile_power", [])
+        if y < 0 or y >= len(tile_power):
+            return 0
+        row = tile_power[y]
+        if x < 0 or x >= len(row):
+            return 0
+        try:
+            return int(row[x])
+        except (TypeError, ValueError):
+            return 0
 
     def _country_gdp_base_currency(self, country_name):
         country = self._country_by_name(country_name)
@@ -255,19 +449,34 @@ class World:
 
         valid_owners = {c.name for c in self.Country_list}
         normalized_tiles = []
+        raw_tile_power = self.territory_map.get("tile_power", [])
+        has_raw_tile_power = isinstance(raw_tile_power, list) and len(raw_tile_power) == height
+        normalized_tile_power = []
         for row in tiles:
             if not isinstance(row, list) or len(row) != width:
                 self.territory_map = None
                 return
             normalized_row = []
+            power_row = []
+            y = len(normalized_tiles)
+            raw_power_row = raw_tile_power[y] if has_raw_tile_power and isinstance(raw_tile_power[y], list) else []
             for cell in row:
+                x = len(normalized_row)
                 if cell == self.SEA_TILE:
                     normalized_row.append(self.SEA_TILE)
+                    power_row.append(0)
                 elif isinstance(cell, str) and (cell == self.EMPTY_TILE or cell in valid_owners):
                     normalized_row.append(cell)
+                    if x < len(raw_power_row):
+                        raw_val = raw_power_row[x]
+                    else:
+                        raw_val = self.MIN_TILE_POWER if cell in valid_owners else 0
+                    power_row.append(self._clamp_tile_power(raw_val, cell))
                 else:
                     normalized_row.append(self.EMPTY_TILE)
+                    power_row.append(0)
             normalized_tiles.append(normalized_row)
+            normalized_tile_power.append(power_row)
 
         committed = self.territory_map.get("military_committed", {})
         normalized_committed = {}
@@ -285,9 +494,11 @@ class World:
             "width": width,
             "height": height,
             "tiles": normalized_tiles,
+            "tile_power": normalized_tile_power,
             "country_colors": self._assign_country_colors(self.territory_map.get("country_colors")),
             "military_committed": normalized_committed,
             "seed": self.territory_map.get("seed"),
+            "event_logs": self._normalize_territory_event_logs(self.territory_map.get("event_logs", [])),
         }
 
     def ensure_territory_map(self):
@@ -350,6 +561,13 @@ class World:
             [self.EMPTY_TILE if land_mask[y][x] else self.SEA_TILE for x in range(width)]
             for y in range(height)
         ]
+        tile_power = [
+            [
+                0 if tiles[y][x] != self.SEA_TILE else 0
+                for x in range(width)
+            ]
+            for y in range(height)
+        ]
 
         land_cells = [(x, y) for y in range(height) for x in range(width) if tiles[y][x] == self.EMPTY_TILE]
         country_names = [c.name for c in self.Country_list]
@@ -396,13 +614,24 @@ class World:
             x, y = rng.choice(candidates)
             tiles[y][x] = country_name
 
+        # 空き地Powerは0固定。保有領土のみ初期Powerを付与。
+        for y in range(height):
+            for x in range(width):
+                owner = tiles[y][x]
+                if owner in country_names:
+                    tile_power[y][x] = self._terrain_power_from_score(scores[y][x])
+                else:
+                    tile_power[y][x] = 0
+
         self.territory_map = {
             "width": width,
             "height": height,
             "tiles": tiles,
+            "tile_power": tile_power,
             "country_colors": self._assign_country_colors(),
             "military_committed": {c.name: 0.0 for c in self.Country_list},
             "seed": seed,
+            "event_logs": [],
         }
         return self.territory_map
 
@@ -416,6 +645,56 @@ class World:
                     counts[owner] += 1
         return counts
 
+    def get_country_territory_power(self, country_name):
+        self.ensure_territory_map()
+        total_power = 0
+        tiles = self.territory_map["tiles"]
+        tile_power = self.territory_map.get("tile_power", [])
+        for y, row in enumerate(tiles):
+            for x, owner in enumerate(row):
+                if owner == country_name:
+                    total_power += self._get_tile_power_value(x, y)
+        return int(total_power)
+
+    def get_country_territory_power_stats(self, country_name):
+        self.ensure_territory_map()
+        tiles = self.territory_map["tiles"]
+        powers = []
+        for y, row in enumerate(tiles):
+            for x, owner in enumerate(row):
+                if owner == country_name:
+                    powers.append(self._get_tile_power_value(x, y))
+
+        if not powers:
+            return {"total_power": 0, "average_power": 0.0, "max_power": 0}
+
+        total = sum(powers)
+        return {
+            "total_power": int(total),
+            "average_power": float(total / len(powers)),
+            "max_power": int(max(powers)),
+        }
+
+    def get_all_country_territory_power(self):
+        self.ensure_territory_map()
+        result = {c.name: 0 for c in self.Country_list}
+        tiles = self.territory_map["tiles"]
+        for y, row in enumerate(tiles):
+            for x, owner in enumerate(row):
+                if owner in result:
+                    result[owner] += self._get_tile_power_value(x, y)
+        return result
+
+    def get_territory_event_logs(self, limit=200):
+        self.ensure_territory_map()
+        logs = self.territory_map.get("event_logs", [])
+        if not isinstance(logs, list):
+            return []
+        max_items = max(0, int(limit))
+        if max_items == 0:
+            return []
+        return list(reversed(logs[-max_items:]))
+
     def get_country_available_military(self, country_name):
         self.ensure_territory_map()
         country = self._country_by_name(country_name)
@@ -423,6 +702,10 @@ class World:
             return 0.0
         committed = self.territory_map["military_committed"].get(country_name, 0.0)
         return max(0.0, country.military.caluc_power() - committed)
+
+    def get_country_reinforce_cost_usd(self, country_name):
+        gdp_usd = self._country_gdp_base_currency(country_name)
+        return max(0.0, gdp_usd * self.REINFORCE_GDP_RATIO)
 
     def _validate_claim_territory(self, country_name, x, y, require_resources=True):
         self.ensure_territory_map()
@@ -463,7 +746,7 @@ class World:
             if country.usd < cost_usd:
                 return (
                     False,
-                    f"USDが不足しています。必要 {cost_usd:.1f} / 保有 {country.usd:.1f}",
+                    f"USDが不足しています。必要 {format_ja_units(cost_usd)} / 保有 {format_ja_units(country.usd)}",
                     country,
                     cost_usd,
                     cost_military,
@@ -498,8 +781,12 @@ class World:
                     require_resources=require_resources,
                 )
                 key = f"{x},{y}"
+                power_value = self._get_tile_power_value(x, y)
                 if ok:
-                    reason = f"占領可能です。消費: {cost_military:.1f} Military / {cost_usd:.1f} USD"
+                    reason = (
+                        f"占領可能です。Power {power_value} / 消費: {cost_military:.1f} Military / "
+                        f"{format_ja_units(cost_usd)} USD"
+                    )
                 else:
                     reason = msg
                 options[key] = {
@@ -507,6 +794,7 @@ class World:
                     "reason": reason,
                     "cost_usd": round(cost_usd, 1),
                     "cost_military": round(cost_military, 1),
+                    "tile_power": int(power_value),
                 }
         return options
 
@@ -526,7 +814,63 @@ class World:
             self.territory_map["military_committed"].get(country_name, 0.0) + cost_military
         )
         self.territory_map["tiles"][y][x] = country_name
-        return True, f"{country_name} が領土を拡大しました。消費: {cost_military:.1f} Military / {cost_usd:.1f} USD"
+        current_power = self._get_tile_power_value(x, y)
+        if current_power <= 0:
+            current_power = self.MIN_TILE_POWER
+            self.territory_map["tile_power"][y][x] = current_power
+        self._append_territory_event_log(
+            country_name=country_name,
+            action="claim",
+            x=x,
+            y=y,
+            power_after=current_power,
+        )
+        return True, (
+            f"{country_name} が領土を拡大しました。Power {current_power} を確保 / "
+            f"消費: {cost_military:.1f} Military / {format_ja_units(cost_usd)} USD"
+        )
+
+    def reinforce_territory(self, country_name, x, y):
+        self.ensure_territory_map()
+        width = self.territory_map["width"]
+        height = self.territory_map["height"]
+        if x < 0 or y < 0 or x >= width or y >= height:
+            return False, "指定したマスは地図の範囲外です。"
+
+        country = self._country_by_name(country_name)
+        if country is None:
+            return False, "対象の国が見つかりません。"
+
+        owner = self.territory_map["tiles"][y][x]
+        if owner != country_name:
+            return False, "自国領のみ強化できます。"
+
+        current_power = self._get_tile_power_value(x, y)
+        if current_power >= self.MAX_TILE_POWER:
+            return False, f"この領土は既に最大Power({self.MAX_TILE_POWER})です。"
+
+        required_usd = self.get_country_reinforce_cost_usd(country_name)
+        if country.usd < required_usd:
+            return (
+                False,
+                f"FX Reserveが不足しています。必要 {format_ja_units(required_usd)} USD (GDPの10%) / 保有 {format_ja_units(country.usd)} USD",
+            )
+
+        country.usd -= required_usd
+        self.territory_map["tile_power"][y][x] = min(self.MAX_TILE_POWER, max(self.MIN_TILE_POWER, current_power + 1))
+        new_power = self.territory_map["tile_power"][y][x]
+        self._append_territory_event_log(
+            country_name=country_name,
+            action="reinforce",
+            x=x,
+            y=y,
+            power_before=current_power,
+            power_after=new_power,
+        )
+        return True, (
+            f"{country_name} が領土強化を実施。Power {current_power} → {new_power} / "
+            f"消費 {format_ja_units(required_usd)} USD (GDPの10%)"
+        )
 
     def _select_ai_claim_target(self, country_name):
         candidate_tiles = self._candidate_claim_tiles(country_name)
@@ -690,10 +1034,15 @@ class World:
             
     def Next_turn(self):
         self.turn += 1
+        self._auto_intervene_base_currency_domestic()
+        self._auto_cover_ai_negative_fx_reserves()
         
         # ★追加: AIによる関税率の自動更新 (前ターンのデータを使うため、リセット前に実行)
         for country in self.Country_list:
             country.decide_and_update_tariffs(self.Country_list)
+
+        territory_power_map = self.get_all_country_territory_power()
+        territory_counts = self.get_territory_counts()
 
         # 1. 各国のターン進行
         for country in self.Country_list:
@@ -702,7 +1051,13 @@ class World:
 
             my_money = next((m for m in self.Money_list if m.name == country.money_name), None)
             if my_money:
-                country.next_turn(my_money, my_money.get_rate(), self.turn)
+                country.next_turn(
+                    my_money,
+                    my_money.get_rate(),
+                    self.turn,
+                    territory_power=territory_power_map.get(country.name, 0),
+                    territory_tiles=territory_counts.get(country.name, 0),
+                )
 
         # ====== ★追加: 同じ通貨圏のインフレ率を連動（GDP加重平均） ======
         sync_strength = 0.6  # 連動の強さ（0.0で連動なし、1.0で完全一致）

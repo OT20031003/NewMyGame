@@ -379,7 +379,6 @@
 
         /* アイコン色 */
         .icon-pension { color: #a5b4fc; filter: drop-shadow(0 0 5px rgba(165,180,252,0.5)); }
-        .icon-industry { color: #67e8f9; filter: drop-shadow(0 0 5px rgba(103,232,249,0.5)); }
         .icon-military { color: #fda4af; filter: drop-shadow(0 0 5px rgba(253,164,175,0.5)); }
 
     </style>
@@ -435,23 +434,6 @@
                                    class="number-input" 
                                    min="0" max="1000" step="0.1" 
                                    value="{{ "%.1f"|format(country.budget.budget[1]) }}">
-                        </div>
-
-                        <div class="control-group">
-                            <div class="control-label">
-                                <i class="fas fa-city icon-industry"></i> Industry
-                            </div>
-                            <div class="slider-wrapper">
-                                <input type="range" min="0" max="150" step="0.1" 
-                                       value="{{ "%.1f"|format(country.budget.budget[2]) }}"
-                                       class="slider-input" data-target="industry_{{ country.name }}">
-                            </div>
-                            <input type="number" 
-                                   id="industry_{{ country.name }}" 
-                                   name="industry_{{ country.name }}" 
-                                   class="number-input" 
-                                   min="0" max="1000" step="0.1" 
-                                   value="{{ "%.1f"|format(country.budget.budget[2]) }}">
                         </div>
 
                         <div class="control-group">
@@ -513,7 +495,6 @@
                 // Inputs
                 const inputs = {
                     pension: card.querySelector(`#pension_${countryName}`),
-                    industry: card.querySelector(`#industry_${countryName}`),
                     military: card.querySelector(`#military_${countryName}`)
                 };
 
@@ -547,11 +528,10 @@
                 // --- Calculation Logic ---
                 function updateBudgetTotal() {
                     const pension = parseFloat(inputs.pension.value) || 0;
-                    const industry = parseFloat(inputs.industry.value) || 0;
                     const military = parseFloat(inputs.military.value) || 0;
                     
                     // Calculate Total
-                    const total = parseFloat((pension + industry + military).toFixed(1));
+                    const total = parseFloat((pension + military).toFixed(1));
                     totalSpan.textContent = total.toFixed(1);
 
                     // Update Status Visuals
@@ -562,7 +542,7 @@
                     let glowColor = "var(--primary-glow)";
 
                     if (total < 99.9) {
-                        statusText = "Surplus (Saving)";
+                        statusText = `Reserves +${(100 - total).toFixed(1)}%`;
                         statusClass = "status-surplus";
                         barColor = "var(--success-color)";
                     } else if (total > 100.1) {

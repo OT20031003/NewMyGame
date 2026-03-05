@@ -245,7 +245,7 @@
 
         <div class="card" style="margin-bottom: 2rem; border-left: 4px solid var(--accent-color);">
             <h3 style="margin-top: 0; font-size: 1.1rem; color: var(--text-color); margin-bottom: 1rem; font-weight: 600;">
-                <i class="fas fa-balance-scale" style="margin-right: 8px;"></i> Compare with Countries (USD GDP, Per Capita, Industry, Inflation, Debt, Population, Income)
+                <i class="fas fa-balance-scale" style="margin-right: 8px;"></i> Compare with Countries (USD GDP, Per Capita, Industry(Power), Inflation, Debt, Population, Income)
             </h3>
             <div style="display: flex; flex-wrap: wrap; gap: 0.8rem;">
                 {% for c_name in all_countries_data.keys()|sort %}
@@ -303,7 +303,7 @@
             <div class="card chart-card"><h2><i class="fas fa-exchange-alt"></i> Rate & Interest Diff Correlation</h2><canvas id="rateDiffCorrelationChart"></canvas></div>
             <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Real Interest Diff (vs {{ base_country_name }})</h2><canvas id="realInterestDiffChart"></canvas></div>
             <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Price Inflation Rate</h2><canvas id="priceChart"></canvas></div>
-            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Industry Histrory</h2><canvas id="industryData"></canvas></div>
+            <div class="card chart-card"><h2><i class="fas fa-chart-line"></i> Industry History (Power-Driven)</h2><canvas id="industryData"></canvas></div>
             <div class="card chart-card"><h2><i class="fas fa-balance-scale"></i> Net Debt / GDP Ratio</h2><canvas id="debtChart"></canvas></div>
 
             <div class="card table-card">
@@ -330,6 +330,14 @@
 
             <div class="card table-card">
                 <h2><i class="fas fa-shield-alt"></i> Tariff Settings (Import Tax)</h2>
+                <div style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
+                    <form action="{{ url_for('update_tariff_bulk') }}" method="post" style="display: flex; align-items: center; gap: 10px;">
+                        <input type="hidden" name="country_name" value="{{ country.name }}">
+                        <span style="font-size: 0.9rem; color: var(--text-muted-color);">一括設定</span>
+                        <input type="number" name="tariff_rate" step="1" min="0" max="10000" value="0" style="background-color: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color); color: var(--text-color); padding: 4px 8px; border-radius: 4px; width: 80px;"> %
+                        <button type="submit" style="padding: 6px 12px; background-color: #059669; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Apply All</button>
+                    </form>
+                </div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -1119,7 +1127,7 @@
             const targetCharts = [
                 { instance: chartInstances.usdgdpChart, dataKey: 'gdp_usd_history', labelSuffix: 'GDP (USD)' },
                 { instance: chartInstances.gdpPerCapitaUsdChart, dataKey: 'gdp_per_capita_history', labelSuffix: 'Per Capita (USD)' },
-                { instance: chartInstances.industryData, dataKey: 'industry_history', labelSuffix: 'Industry' },
+                { instance: chartInstances.industryData, dataKey: 'industry_history', labelSuffix: 'Industry (Power)' },
                 { instance: chartInstances.priceChart, dataKey: 'price_inflation_history', labelSuffix: 'Inflation Rate' },
                 { instance: chartInstances.debtChart, dataKey: 'debt_ratio_history', labelSuffix: 'Net Debt / GDP' },
                 { instance: chartInstances.populationHistoryChart, dataKey: 'population_history', labelSuffix: 'Population' },

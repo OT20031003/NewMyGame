@@ -74,6 +74,8 @@ class Country:
         self.selfoperation = selfoperation # 自律的操作を行うかどうか TODO
         self.past_population.append(self.get_population())
         self.turn_intervention_usd = 0.0
+        # 為替影響を打ち消すための自動介入累積（Domestic調整専用）
+        self.fx_neutral_intervention_usd = 0.0
 
         # === イベントログの初期化 ===
         self.event_logs = []
@@ -225,7 +227,7 @@ class Country:
                 return 
         self.turn_intervention_usd += amount_usd
 
-    def budget_decide(self, current_rate, domestic_interest):
+    def budget_decide(self, current_rate, domestic_interest, world_country_list=None):
         """
         予算と税率を決定するメソッド。
         Net Debt / GDP Ratio を ±300% 以内に収めることを最優先とし、
@@ -247,7 +249,7 @@ class Country:
             # 緊急時 (Ratio > 280%)
             'EMERGENCY_DEBT_TAX': 0.60,        # 緊急増税目標値
             'EMERGENCY_DEBT_BUDGET': 10.0,     # 緊急緊縮予算 (税収の'EMERGENCY_DEBT_BUDGET'%に抑え、40%を借金返済へ)
-            'EMERGENCY_DEBT_WEIGHTS': [20.0, 60.0, 20.0], # 生存維持優先 [年金, 産業, 軍事]
+            'EMERGENCY_DEBT_WEIGHTS': [25.0, 75.0], # 生存維持優先 [年金, 軍事]
             
             # 警戒時 (200% < Ratio <= 280%)
             'WARNING_DEBT_BUDGET': 60.0,       # 緩やかな緊縮 (税収の95%を使う)
@@ -256,7 +258,7 @@ class Country:
             # 緊急時 (Ratio < -280%)
             'EMERGENCY_ASSET_TAX': 0.30,       # 緊急減税目標値
             'EMERGENCY_ASSET_BUDGET': 400.0,   # 緊急放出予算 (税収の'EMERGENCY_ASSET_BUDGET/100倍を使う＝資産取り崩し)
-            'EMERGENCY_ASSET_WEIGHTS': [20.0, 70.0, 10.0], # 産業投資特化 (GDP分母を拡大して比率是正)
+            'EMERGENCY_ASSET_WEIGHTS': [70.0, 30.0], # 景気刺激時は年金厚め [年金, 軍事]
 
             # 警戒時 (-280% <= Ratio < -200%)
             'WARNING_ASSET_BUDGET': 105.0,     # 緩やかな放出 (税収の105%を使う)
@@ -265,6 +267,12 @@ class Country:
             'NORMAL_TAX_MIN': 0.1,
             'NORMAL_TAX_MAX': 0.7,
             'NORMAL_TAX_STEP': 0.02,           # 通常時の税率変更幅
+            'BASE_TOTAL_BUDGET': 35.0,         # Industry廃止後の通常基準（税収の35%を使用）
+            'TOTAL_BUDGET_MIN': 5.0,
+            'TOTAL_BUDGET_MAX': 450.0,
+            'MILITARY_GAP_BUDGET_BOOST': 40.0, # 軍事劣位時に追加で使う予算余地
+            'MILITARY_GAP_WEIGHT_MULT': 3.2,   # 軍事劣位時の軍事配分ウェイト増幅
+            'MILITARY_SURPLUS_BUDGET_CUT': 10.0,
         }
 
         # ==================================================================================
@@ -293,6 +301,27 @@ class Country:
         if len(self.population) > 0:
             total_satis = sum(p[1].get_satisfaction() for p in self.population)
             avg_satisfaction = total_satis / len(self.population)
+
+        # 軍事劣位の判定（他国比較）
+        my_military = max(0.0, self.military.caluc_power())
+        strongest_enemy = 0.0
+        avg_enemy = 0.0
+        enemy_count = 0
+        if world_country_list:
+            for c in world_country_list:
+                if c.name == self.name:
+                    continue
+                enemy_count += 1
+                enemy_power = max(0.0, c.military.caluc_power())
+                avg_enemy += enemy_power
+                if enemy_power > strongest_enemy:
+                    strongest_enemy = enemy_power
+        if enemy_count > 0:
+            avg_enemy /= enemy_count
+
+        threat_reference = max(1.0, strongest_enemy * 0.7, avg_enemy)
+        military_disadvantage = max(0.0, min(1.0, (threat_reference - my_military) / threat_reference))
+        military_advantage = max(0.0, min(1.0, (my_military - threat_reference) / threat_reference))
         
         is_in_debt = self.domestic_money < 0 # 現金ベースでの赤字判定用
 
@@ -300,12 +329,11 @@ class Country:
         # 2. 基本方針の決定 (ゾーン制御)
         # ==================================================================================
         new_tax = self.tax
-        target_total_budget = 100.0 # 100.0 = 均衡財政 (入った税収分だけ使う)
+        target_total_budget = P['BASE_TOTAL_BUDGET']
         
         # 予算配分の初期値 (ベースライン)
-        w_pension = 40.0
-        w_industry = 40.0
-        w_military = 20.0
+        w_pension = 65.0
+        w_military = 35.0
         
         # --- ゾーンA: 緊急事態（借金地獄） Ratio > 280% ---
         if debt_ratio > P['LIMIT_WARNING']:
@@ -323,7 +351,7 @@ class Country:
             target_total_budget = P['WARNING_DEBT_BUDGET'] * (1.0 - severity) + P['EMERGENCY_DEBT_BUDGET'] * severity
             
             # 配分を生存維持モードへ強制変更
-            w_pension, w_industry, w_military = P['EMERGENCY_DEBT_WEIGHTS']
+            w_pension, w_military = P['EMERGENCY_DEBT_WEIGHTS']
 
         # --- ゾーンB: 警戒レベル（借金多め） 200% < Ratio <= 280% ---
         elif debt_ratio > P['LIMIT_SAFE']:
@@ -331,8 +359,8 @@ class Country:
             new_tax += P['NORMAL_TAX_STEP']
             # 緩やかな緊縮財政
             target_total_budget = P['WARNING_DEBT_BUDGET']
-            # 産業投資を少し抑える
-            w_industry *= 0.8
+            # 軍事をやや抑制
+            w_military *= 0.8
             
         # --- ゾーンC: 緊急事態（金余りすぎ） Ratio < -280% ---
         elif debt_ratio < -P['LIMIT_WARNING']:
@@ -345,8 +373,8 @@ class Country:
             # 予算大放出
             target_total_budget = P['EMERGENCY_ASSET_BUDGET']
             
-            # 産業投資に特化してGDP(分母)の拡大を狙う
-            w_pension, w_industry, w_military = P['EMERGENCY_ASSET_WEIGHTS']
+            # 資産過多時は福祉優先
+            w_pension, w_military = P['EMERGENCY_ASSET_WEIGHTS']
 
         # --- ゾーンD: 警戒レベル（金余り） -280% <= Ratio < -200% ---
         elif debt_ratio < -P['LIMIT_SAFE']:
@@ -354,8 +382,8 @@ class Country:
             new_tax -= P['NORMAL_TAX_STEP']
             # 緩やかな放出
             target_total_budget = P['WARNING_ASSET_BUDGET']
-            # 産業重視
-            w_industry *= 1.2
+            # 年金を厚めにする
+            w_pension *= 1.2
 
         # --- ゾーンE: 安全圏 (通常運転) -200% <= Ratio <= 200% ---
         else:
@@ -374,21 +402,34 @@ class Country:
             
             # 2. 経済状況による予算規模調整
             if is_in_debt:
-                target_total_budget = 95.0 # 現金赤字なら少し絞る
+                target_total_budget = 30.0
             elif gdp_growth < 1.0 and usd_change > 0:
-                target_total_budget = 105.0 # 景気悪い＆外貨余裕ありなら吹かす
+                target_total_budget = 55.0
             elif gdp_growth > 4.0:
-                target_total_budget = 95.0 # 加熱気味なら抑える
+                target_total_budget = 28.0
 
             # 3. 予算配分の調整
             if usd_change < -1.0: w_military *= (1.2 + min(3.0, abs(usd_change)) * 0.3)
             elif usd_change > 1.0: w_military *= 1.3
             
             if gdp_growth > 4.0: w_military *= 1.2
-            if gdp_growth < 2.0: w_industry *= 1.4
-            elif gdp_growth > 8.0: w_industry *= 0.8
+            if gdp_growth < 1.5: w_pension *= 1.2
             
             if avg_satisfaction < 50: w_pension *= 1.5
+
+        # 軍事劣位なら「予算規模」「配分」の両方を防衛寄りに補正
+        if military_disadvantage > 0.0:
+            defense_uplift = P['MILITARY_GAP_BUDGET_BOOST'] * military_disadvantage
+            if debt_ratio > P['LIMIT_WARNING']:
+                defense_uplift *= 0.35
+            elif debt_ratio > P['LIMIT_SAFE']:
+                defense_uplift *= 0.55
+            target_total_budget += defense_uplift
+            w_military *= (1.0 + military_disadvantage * P['MILITARY_GAP_WEIGHT_MULT'])
+            w_pension *= max(0.45, 1.0 - military_disadvantage * 0.45)
+        else:
+            target_total_budget -= P['MILITARY_SURPLUS_BUDGET_CUT'] * military_advantage
+            w_military *= max(0.6, 1.0 - military_advantage * 0.35)
 
         # ==================================================================================
         # 3. 最終調整とセーフティネット (クリッピング)
@@ -403,17 +444,53 @@ class Country:
             # どんなに景気が悪くても、予算を税収の半分以下にして借金返済に回す
             target_total_budget = min(target_total_budget, 50.0) 
 
-        # 予算配分比率の正規化
-        total_weight = w_pension + w_industry + w_military
+        target_total_budget = max(P['TOTAL_BUDGET_MIN'], min(P['TOTAL_BUDGET_MAX'], target_total_budget))
+
+        # 予算配分比率の正規化（軍事側のベース配分）
+        total_weight = w_pension + w_military
         if total_weight == 0: total_weight = 1.0
         
         factor = target_total_budget / total_weight
+
+        weighted_military_alloc = max(0.0, w_military * factor)
+
+        # AI年金目標:
+        # Income by Age(20~60) の平均 Income の 1/3 を、
+        # 66歳以上の1人あたり年金として支給できる金額になるように逆算する。
+        working_incomes = [self.population[i][2].get_salary() for i in range(20, 61)]
+        avg_working_income = sum(working_incomes) / len(working_incomes) if working_incomes else 0.0
+        target_pension_per_capita = avg_working_income / 3.0
+        elderly_total_pop = sum(self.population[i][0] for i in range(66, 100))
+        estimated_tax_revenue = max(0.0, gdp * new_tax)
+
+        pension_alloc = 0.0
+        if estimated_tax_revenue > 0.0 and elderly_total_pop > 0:
+            required_pension_amount = target_pension_per_capita * elderly_total_pop
+            pension_alloc = (required_pension_amount / estimated_tax_revenue) * 100.0
+
+        pension_alloc = max(0.0, min(P['TOTAL_BUDGET_MAX'], pension_alloc))
+        military_alloc = weighted_military_alloc
+
+        # 年金要求が大きい場合は総予算が target_total_budget を上回ることを許容する。
+        # ただし最終上限は TOTAL_BUDGET_MAX を守る。
+        total_alloc = pension_alloc + military_alloc
+        if total_alloc > P['TOTAL_BUDGET_MAX']:
+            overflow = total_alloc - P['TOTAL_BUDGET_MAX']
+            military_alloc = max(0.0, military_alloc - overflow)
+            total_alloc = pension_alloc + military_alloc
+            if total_alloc > P['TOTAL_BUDGET_MAX']:
+                pension_alloc = max(0.0, P['TOTAL_BUDGET_MAX'] - military_alloc)
+
+        # ハード債務域では総支出50%上限を優先（軍事から先にカット）
+        if debt_ratio > P['LIMIT_HARD'] - 10.0:
+            hard_cap = 50.0
+            if pension_alloc + military_alloc > hard_cap:
+                military_alloc = max(0.0, hard_cap - pension_alloc)
+                if pension_alloc + military_alloc > hard_cap:
+                    pension_alloc = hard_cap
+                    military_alloc = 0.0
         
-        pension_alloc = w_pension * factor
-        industry_alloc = w_industry * factor
-        military_alloc = w_military * factor
-        
-        return new_tax, [pension_alloc, industry_alloc, military_alloc]
+        return new_tax, [pension_alloc, 0.0, military_alloc]
     
     def _load_from_rows(self, rows):
         cnt = 0
@@ -431,12 +508,12 @@ class Country:
             elif cnt == 2:
                 pass
             elif cnt == 3:
-                self.budget.budget = [float(row[0]), float(row[1]), float(row[2]), float(row[3])]
+                self.budget.budget = [float(row[0]), float(row[1]), 0.0, float(row[3])]
             elif cnt == 4:
                 tcnt = int(row[0])
                 self.budget.past_budget = []
             elif cnt <= 4 + tcnt:
-                self.budget.past_budget.append([float(row[0]), float(row[1]), float(row[2]), float(row[3])])
+                self.budget.past_budget.append([float(row[0]), float(row[1]), 0.0, float(row[3])])
             elif cnt == 5 + tcnt:
                 self.industry = CountryPower(row[0])
             elif cnt == 6 + tcnt:
@@ -501,6 +578,8 @@ class Country:
             self.tariffs = {}
         if not hasattr(self, 'turn_tariff_cost_usd'):
             self.turn_tariff_cost_usd = 0.0
+        if not hasattr(self, 'fx_neutral_intervention_usd'):
+            self.fx_neutral_intervention_usd = 0.0
 
     def load(self, name):
         self.name = name
@@ -568,8 +647,32 @@ class Country:
         if len(self.past_usd) < self.turn_year :
             return 0.0
         return (self.past_usd[-1] - self.past_usd[pt]) / (abs(self.past_usd[pt]) + 0.00001) * 100.0    
+
+    def estimate_birth_rate(self, avg_satisfaction, purchasing_power, territory_power, territory_tiles):
+        base_birth_rate = 0.035
+        satis_factor = (avg_satisfaction - 50.0) * 0.0004
+        econ_factor = min(max(0.0, purchasing_power) * 0.005, 0.015)
+
+        avg_tile_power = float(territory_power) / max(1.0, float(territory_tiles))
+        power_factor = min(0.012, max(0.0, (avg_tile_power - 1.0) * 0.00055))
+        return max(0.005, base_birth_rate + satis_factor + econ_factor + power_factor)
+
+    def calc_industry_gain_from_power(self, territory_power, avg_satisfaction):
+        sat_multiplier = 0.8 + max(0.0, min(40.0, avg_satisfaction - 30.0)) / 80.0
+        base_gain = math.sqrt(max(0.0, territory_power)) * 0.9
+        return max(0.0, base_gain * sat_multiplier)
     
-    def next_turn_year(self, tax, bud, rate, turn, domestic_interest, usd_interest):
+    def next_turn_year(
+        self,
+        tax,
+        bud,
+        rate,
+        turn,
+        domestic_interest,
+        usd_interest,
+        territory_power=0,
+        territory_tiles=0,
+    ):
         assert(len(self.population) == 100), "Population list should have 100 elements."
         
         if tax < 0 or tax > 1:
@@ -597,11 +700,12 @@ class Country:
         current_price = self.price.get_price()
         purchasing_power = avg_salary_repro / (current_price + 1.0) 
         
-        base_birth_rate = 0.035 
-        satis_factor = (avg_satis_repro - 50.0) * 0.0004 
-        econ_factor = min(purchasing_power * 0.005, 0.015) 
-        
-        final_birth_rate = max(0.005, base_birth_rate + satis_factor + econ_factor)
+        final_birth_rate = self.estimate_birth_rate(
+            avg_satisfaction=avg_satis_repro,
+            purchasing_power=purchasing_power,
+            territory_power=territory_power,
+            territory_tiles=territory_tiles,
+        )
         
         new_babies = int(total_repro_pop * final_birth_rate)
         new_babies = int(new_babies * random.uniform(0.95, 1.05))
@@ -697,7 +801,7 @@ class Country:
             return 0.0
         return (self.past_domestic_money[-1] - self.past_domestic_money[pt]) / (abs(self.past_domestic_money[pt]) + 0.00001) * 100.0
            
-    def next_turn(self, money, rate, turn):
+    def next_turn(self, money, rate, turn, territory_power=0, territory_tiles=0):
         if not self.past_gdp_usd or self.past_gdp_usd[-1] < 0:
             current_gdp_usd = self.caluc_gdp() / (rate + 0.00001)
             if len(self.past_gdp_usd) > 0:
@@ -780,18 +884,14 @@ class Country:
             curr_satis = self.population[i][1].satisfaction
             self.population[i][1].set_satisfaction((curr_satis + prev_satis) / 2)
             
-        ind_budget_rate = self.budget.budget[2] if len(self.budget.budget) > 2 else 40.0
         mil_budget_rate = self.budget.budget[3] if len(self.budget.budget) > 3 else 20.0
-        
-        investment_efficiency = 1.0
-        if interest_val > 3.0:
-            penalty = (interest_val - 3.0) * 0.03
-            investment_efficiency = max(0.1, 1.0 - penalty)
-            
-        military_spillover = (mil_budget_rate * 0.01 * total_budget) * 0.20
-        
-        base_ind_investment = ind_budget_rate * 0.01 * total_budget
-        self.industry.add_power((base_ind_investment + military_spillover) * investment_efficiency, rate, turn)
+
+        avg_satisfaction = 50.0
+        if self.population:
+            avg_satisfaction = sum(p[1].get_satisfaction() for p in self.population) / len(self.population)
+
+        industry_gain = self.calc_industry_gain_from_power(territory_power=territory_power, avg_satisfaction=avg_satisfaction)
+        self.industry.add_flat_power(industry_gain)
         self.military.add_power(mil_budget_rate * 0.01 * total_budget, rate, turn)
         
         industry_power = self.industry.caluc_power()

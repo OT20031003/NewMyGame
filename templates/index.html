@@ -520,7 +520,7 @@
                     <div class="card-body">
                         <div class="hero-stat">
                             <div class="hero-label">GDP (USD)</div>
-                            <span class="hero-value font-mono">{{ "%d"|format(country.get_gdp_usd()) }}</span>
+                            <span class="hero-value font-mono">{{ country.get_gdp_usd()|ja_units }}</span>
                             
                             {% set gdp_change = country.get_gdp_usd_change() %}
                             <div class="hero-sub">
@@ -538,7 +538,7 @@
                                 <div class="stat-row">
                                     <span class="stat-label">GDP (Loc)</span>
                                     <div class="text-right">
-                                        <div class="stat-value font-mono">{{ "%d"|format(country.get_gdp()) }}</div>
+                                        <div class="stat-value font-mono">{{ country.get_gdp()|ja_units }}</div>
                                         {% set gdp_loc_change = country.get_gdp_change() %}
                                         <div class="change-text {{ 'text-success' if gdp_loc_change >= 0 else 'text-danger' }}">
                                             {{ "%+.1f"|format(gdp_loc_change) }}%
@@ -585,7 +585,7 @@
                                 
                                 <div style="margin-bottom: 8px;">
                                     <div class="stat-row" style="margin-bottom: 2px;">
-                                        <span class="stat-label"><i class="fas fa-industry"></i> Ind</span>
+                                        <span class="stat-label"><i class="fas fa-industry"></i> Industry</span>
                                         <div class="text-right">
                                             <span class="stat-value font-mono">{{ "%.1f"|format(country.industry.caluc_power()) }}</span>
                                             {% set ind_change = country.industry.change_power() %}
@@ -596,6 +596,9 @@
                                     </div>
                                     <div class="progress-bar-bg">
                                         <div class="progress-bar-fill" style="width: {{ [(country.industry.caluc_power() / 50000 * 100), 100]|min }}%; background-color: var(--color-primary);"></div>
+                                    </div>
+                                    <div class="mono muted" style="font-size: 0.72rem; margin-top: 3px;">
+                                        Tile Power {{ country.territory_power_total }} / Avg {{ "%.1f"|format(country.territory_power_avg) }}
                                     </div>
                                 </div>
 
@@ -626,7 +629,7 @@
                             <div class="stat-row">
                                 <span class="stat-label"><i class="fas fa-university"></i> FX (USD)</span>
                                 <div style="text-align: right;">
-                                    <span class="stat-value font-mono">{{ "%d"|format(country.usd) }}</span>
+                                    <span class="stat-value font-mono">{{ country.usd|ja_units }}</span>
                                     {% set usd_change = country.get_usd_change() %}
                                     <span class="{{ 'text-success' if usd_change >= 0 else 'text-danger' }}" style="font-size: 0.75rem; margin-left: 4px;">
                                         {{ "%+.1f"|format(usd_change) }}%
@@ -637,7 +640,7 @@
                             <div class="stat-row">
                                 <span class="stat-label"><i class="fas fa-wallet"></i> Domestic</span>
                                 <div style="text-align: right;">
-                                    <span class="stat-value font-mono">{{ "%d"|format(country.domestic_money) }}</span>
+                                    <span class="stat-value font-mono">{{ country.domestic_money|ja_units }}</span>
                                     {% set dom_change = country.get_domestic_money_change() %}
                                     <span class="{{ 'text-success' if dom_change >= 0 else 'text-danger' }}" style="font-size: 0.75rem; margin-left: 4px;">
                                         {{ "%+.1f"|format(dom_change) }}%
@@ -708,7 +711,7 @@
                 <canvas id="gdpShareChart"></canvas>
             </div>
             <div class="chart-card">
-                <h4>Industry Capacity</h4>
+                <h4>Industry (Power-Driven)</h4>
                 <canvas id="industryPowerChart"></canvas>
             </div>
             <div class="chart-card">
@@ -954,7 +957,7 @@
 
         createChart('industryPowerChart', 'bar', {
             labels: countryNames,
-            datasets: [{ label: 'Industry', data: industryPowerValues }]
+            datasets: [{ label: 'Industry (Power-Driven)', data: industryPowerValues }]
         }, barChartOptions);
 
         createChart('militaryPowerChart', 'bar', {

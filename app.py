@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, redirect, url_for
 from Country import Country
 from World import World
 from Money import Money
+from number_format import format_ja_units
 import random
 import os
 app = Flask(__name__)
@@ -15,6 +16,11 @@ world = None
 mp = {"exe":True} #ここはいじくらない
 # Currency Index の基準ターン設定
 CURRENCY_INDEX_BASE_TURN = 80
+
+
+@app.template_filter("ja_units")
+def ja_units_filter(value):
+    return format_ja_units(value)
 
 def default_countries():
     return [
@@ -142,6 +148,9 @@ def index():
         country.interest_rate = money.get_interest()
         country.price_usd = country.price.get_price() / money.get_rate()
         country.price_salary = country.get_average_salary() / country.price.get_price() if country.price.get_price() > 0 else -100.0 # 物価に対する収入の比率
+        power_stats = world.get_country_territory_power_stats(country.name)
+        country.territory_power_total = power_stats["total_power"]
+        country.territory_power_avg = power_stats["average_power"]
         processed_countries.append(country)
 
     sorted_countries = sorted(
@@ -222,6 +231,12 @@ def advance_turn():
         """
         各通貨の経済指標（インフレ率、貿易収支、成長率）を集計し、為替と金利を更新する。
         """
+        # 自動介入（Domestic調整用）は為替計算から中立化する
+        fx_neutral_by_country = {
+            c.name: float(getattr(c, "fx_neutral_intervention_usd", 0.0) or 0.0)
+            for c in world.Country_list
+        }
+
         # --- 1. 基軸通貨(Dollar)の指標を計算 ---
         base_interest = 0.0
         base_inflation = 0.0
@@ -254,7 +269,9 @@ def advance_turn():
                     actual_usd_change = c.usd - prev_usd
                     # 純粋な貿易収支 = 実際の増減 - 介入による増減
                     # 基軸通貨国も介入する場合に備えて同じロジックを適用
-                    trade_balance = actual_usd_change - getattr(c, 'turn_intervention_usd', 0.0)
+                    current_intervention = getattr(c, 'turn_intervention_usd', 0.0)
+                    neutral_intervention = fx_neutral_by_country.get(c.name, 0.0)
+                    trade_balance = actual_usd_change - current_intervention - neutral_intervention
                     
                     total_trade_balance += trade_balance
                     total_gdp_usd += c.get_gdp_usd() # USD換算GDP
@@ -300,7 +317,8 @@ def advance_turn():
                     # 純粋な貿易収支 = 実際の増減 - 介入による増減
                     # c.turn_intervention_usd はこのターンの介入額
                     current_intervention = getattr(c, 'turn_intervention_usd', 0.0)
-                    trade_balance = actual_usd_change - current_intervention
+                    neutral_intervention = fx_neutral_by_country.get(c.name, 0.0)
+                    trade_balance = actual_usd_change - current_intervention - neutral_intervention
                     
                     total_trade_balance += trade_balance
                     total_intervention_usd += current_intervention
@@ -363,6 +381,11 @@ def advance_turn():
                                         base_gdp_per_capita_usd=base_gdp_per_capita_usd 
                                         )
 
+        # 中立化分は一度反映したら消費する
+        for c in world.Country_list:
+            if getattr(c, "fx_neutral_intervention_usd", 0.0) != 0.0:
+                c.fx_neutral_intervention_usd = 0.0
+
     # --- 内部関数定義: 予算の適用ロジック ---
     def apply_yearly_budget():
         """
@@ -391,26 +414,57 @@ def advance_turn():
             if country.selfoperation:
                 # アルゴリズムに基づいて予算を決定
                 # 引数: 為替レート, 金利
-                tax, budget_parts = country.budget_decide(current_rate, domestic_interest)
+                tax, budget_parts = country.budget_decide(
+                    current_rate,
+                    domestic_interest,
+                    world.Country_list,
+                )
                 
                 # 決定した予算を適用
-                country.next_turn_year(tax, budget_parts, current_rate, world.turn, domestic_interest, base_interest)
+                country.next_turn_year(
+                    tax,
+                    budget_parts,
+                    current_rate,
+                    world.turn,
+                    domestic_interest,
+                    base_interest,
+                )
                 
             # --- 手動操作 (User Operation) の場合 ---
             else:
                 # ユーザー入力がある場合 (フォーム送信時)
                 if not is_budget_executed and country.name in mp:
                     tax, budget_parts = mp[country.name]
-                    country.next_turn_year(tax, budget_parts, current_rate, world.turn, domestic_interest, base_interest)
+                    if len(budget_parts) >= 3:
+                        budget_parts = [float(budget_parts[0]), 0.0, float(budget_parts[2])]
+                    else:
+                        pension_part = float(budget_parts[0]) if len(budget_parts) > 0 else country.budget.budget[1]
+                        military_part = float(budget_parts[1]) if len(budget_parts) > 1 else country.budget.budget[3]
+                        budget_parts = [pension_part, 0.0, military_part]
+                    country.next_turn_year(
+                        tax,
+                        budget_parts,
+                        current_rate,
+                        world.turn,
+                        domestic_interest,
+                        base_interest,
+                    )
                 
                 # ユーザー入力がない場合 (自動進行時) -> 現状維持
                 else:
                     current_budget_ratios = [
                         country.budget.budget[1], # pension
-                        country.budget.budget[2], # industry
+                        0.0, # legacy power (unused)
                         country.budget.budget[3]  # military
                     ]
-                    country.next_turn_year(country.bef_tax, current_budget_ratios, current_rate, world.turn, domestic_interest, base_interest)
+                    country.next_turn_year(
+                        country.bef_tax,
+                        current_budget_ratios,
+                        current_rate,
+                        world.turn,
+                        domestic_interest,
+                        base_interest,
+                    )
 
         # 入力処理済みフラグを立てる
         if not is_budget_executed:
@@ -451,9 +505,8 @@ def submit_budget():
         try:
             tax = float(request.form.get(f"tax_{country.name}", country.tax))
             pension = float(request.form.get(f"pension_{country.name}", country.budget.budget[1]))
-            industry = float(request.form.get(f"industry_{country.name}", country.budget.budget[2]))
             military = float(request.form.get(f"military_{country.name}", country.budget.budget[3]))
-            budget_parts = [pension, industry, military]
+            budget_parts = [pension, 0.0, military]
             mp[country.name] = [tax, budget_parts]
         except Exception as e:
             print(f"[エラー] {country.name} の予算更新中にエラー: {e}")
@@ -485,17 +538,23 @@ def budget_decision_index():
 def world_map():
     message = request.args.get("message", "")
     world_map_data = world.ensure_territory_map()
+    territory_event_logs = world.get_territory_event_logs(limit=200)
     base_money = world.get_base_currency()
     territory_counts = world.get_territory_counts()
     countries = []
     for country in world.Country_list:
         available_military = world.get_country_available_military(country.name)
+        power_stats = world.get_country_territory_power_stats(country.name)
+        reinforce_cost_usd = world.get_country_reinforce_cost_usd(country.name)
         countries.append({
             "name": country.name,
             "money_name": country.money_name,
             "territory_count": territory_counts.get(country.name, 0),
             "available_military": available_military,
             "usd": country.usd,
+            "territory_power_total": power_stats["total_power"],
+            "territory_power_avg": power_stats["average_power"],
+            "reinforce_cost_usd": reinforce_cost_usd,
         })
 
     countries = sorted(countries, key=lambda c: c["name"])
@@ -516,18 +575,23 @@ def world_map():
         message=message,
         selected_country=selected_country,
         claim_options_by_country=claim_options_by_country,
+        territory_event_logs=territory_event_logs,
     )
 
 @app.route('/world_map/claim', methods=['POST'])
 def claim_world_map():
     country_name = request.form.get("country_name", "")
+    action_mode = request.form.get("action_mode", "claim")
     try:
         x = int(request.form.get("x", "-1"))
         y = int(request.form.get("y", "-1"))
     except ValueError:
         return redirect(url_for('world_map', message="座標が不正です。", selected_country=country_name))
 
-    success, msg = world.claim_territory(country_name, x, y)
+    if action_mode == "reinforce":
+        success, msg = world.reinforce_territory(country_name, x, y)
+    else:
+        success, msg = world.claim_territory(country_name, x, y)
     if success:
         world.save()
     return redirect(url_for('world_map', message=msg, selected_country=country_name))
@@ -713,6 +777,27 @@ def update_tariff():
         if DEBUG_LOGS:
             print(f"Updated Tariff: {country.name} -> {target_name} : {tariff_rate}%")
         
+    return redirect(url_for('show_country', name=country_name))
+
+
+@app.route('/update_tariff_bulk', methods=['POST'])
+def update_tariff_bulk():
+    country_name = request.form.get('country_name')
+    try:
+        tariff_rate = float(request.form.get('tariff_rate', 0.0))
+        tariff_rate_val = tariff_rate / 100.0
+    except ValueError:
+        tariff_rate_val = 0.0
+
+    country = next((c for c in world.Country_list if c.name == country_name), None)
+    if country:
+        for other in world.Country_list:
+            if other.name == country.name:
+                continue
+            country.set_tariff(other.name, tariff_rate_val)
+        if DEBUG_LOGS:
+            print(f"Bulk Tariff Updated: {country.name} all targets -> {tariff_rate}%")
+
     return redirect(url_for('show_country', name=country_name))
 
 if __name__ == '__main__':

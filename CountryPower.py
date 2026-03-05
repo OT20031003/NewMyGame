@@ -35,7 +35,17 @@ class CountryPower:
         
         # 新しい国力を計算して追加
         self.past_power.append(self.caluc_power())
-        
+
+    def add_flat_power(self, amount):
+        """
+        既に正規化済みの増分をそのまま加算する。
+        地政学Powerのような「直接ストックへ反映したい成長量」向け。
+        """
+        delta = max(0.0, float(amount))
+        self.bef = self.caluc_power()
+        self.past.append(delta)
+        self.past_power.append(self.caluc_power())
+
 
     def caluc_power(self, alpha=0.7):
         """

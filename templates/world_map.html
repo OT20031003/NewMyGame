@@ -118,6 +118,10 @@
             cursor: pointer;
             outline: 1px solid rgba(255, 255, 255, 0.08);
             transition: transform 0.08s ease, outline-color 0.12s ease;
+            position: relative;
+            display: flex;
+            align-items: flex-end;
+            justify-content: flex-end;
         }
 
         .tile:hover { transform: scale(1.07); }
@@ -148,6 +152,18 @@
             outline: 2px solid #e5e7eb;
             box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.65);
             transform: scale(1.08);
+        }
+
+        .tile-power {
+            font-size: 0.56rem;
+            line-height: 1;
+            padding: 1px 2px;
+            margin: 1px;
+            border-radius: 3px;
+            background: rgba(2, 8, 20, 0.68);
+            color: #f8fafc;
+            font-family: 'JetBrains Mono', monospace;
+            pointer-events: none;
         }
 
         .side {
@@ -254,6 +270,63 @@
             margin-bottom: 2px;
         }
 
+        .event-log-panel {
+            margin-top: 16px;
+            padding: 12px;
+        }
+
+        .event-log-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .event-log-head h2 {
+            margin: 0;
+            font-size: 1rem;
+        }
+
+        .event-log-scroll {
+            max-height: 280px;
+            overflow: auto;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+        }
+
+        .event-log-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.84rem;
+        }
+
+        .event-log-table th,
+        .event-log-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(158, 177, 199, 0.15);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .event-log-table th {
+            position: sticky;
+            top: 0;
+            background: rgba(19, 30, 48, 0.95);
+            color: var(--text-muted);
+            font-weight: 600;
+            z-index: 1;
+        }
+
+        .event-log-empty {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 14px 12px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
         .mono { font-family: 'JetBrains Mono', monospace; }
         .muted { color: var(--text-muted); }
 
@@ -281,9 +354,13 @@
                                 {% if cell == '__SEA__' %}
                                     <button type="button" class="tile sea" data-x="{{ x }}" data-y="{{ y }}" data-type="sea" title="海"></button>
                                 {% elif cell == '' %}
-                                    <button type="button" class="tile empty" data-x="{{ x }}" data-y="{{ y }}" data-type="empty" title="空き地"></button>
+                                    <button type="button" class="tile empty" data-x="{{ x }}" data-y="{{ y }}" data-type="empty" data-power="{{ map_data.tile_power[y][x] }}" title="空き地">
+                                        <span class="tile-power">{{ map_data.tile_power[y][x] }}</span>
+                                    </button>
                                 {% else %}
-                                    <button type="button" class="tile owned" data-x="{{ x }}" data-y="{{ y }}" data-type="owned" data-owner="{{ cell }}" title="{{ cell }}" style="--owner-color: {{ map_data.country_colors.get(cell, '#888') }};"></button>
+                                    <button type="button" class="tile owned" data-x="{{ x }}" data-y="{{ y }}" data-type="owned" data-owner="{{ cell }}" data-power="{{ map_data.tile_power[y][x] }}" title="{{ cell }}" style="--owner-color: {{ map_data.country_colors.get(cell, '#888') }};">
+                                        <span class="tile-power">{{ map_data.tile_power[y][x] }}</span>
+                                    </button>
                                 {% endif %}
                             {% endfor %}
                         {% endfor %}
@@ -298,13 +375,14 @@
                 {% endif %}
 
                 <form class="form-card" action="{{ url_for('claim_world_map') }}" method="POST" id="claimForm">
-                    <h2>領土拡大</h2>
+                    <h2>領土操作</h2>
                     <label for="country_name">国を選択</label>
                     <select name="country_name" id="country_name" required>
                         {% for country in countries %}
                             <option value="{{ country.name }}" {{ 'selected' if country.name == selected_country else '' }}>{{ country.name }}</option>
                         {% endfor %}
                     </select>
+                    <input type="hidden" name="action_mode" id="actionMode" value="claim">
 
                     <div class="row">
                         <div>
@@ -316,12 +394,24 @@
                             <input id="claimY" name="y" type="text" value="" readonly required>
                         </div>
                     </div>
+                    <div>
+                        <label for="claimPower">Tile Power</label>
+                        <input id="claimPower" type="text" value="" readonly>
+                    </div>
+                    <div>
+                        <label for="actionLabel">実行内容</label>
+                        <input id="actionLabel" type="text" value="" readonly>
+                    </div>
+                    <div>
+                        <label for="requiredReserve">必要FX Reserve</label>
+                        <input id="requiredReserve" type="text" value="" readonly>
+                    </div>
 
                     <button class="btn" id="claimBtn" type="submit" disabled>
-                        <i class="fas fa-chess-rook"></i> 選択マスを占領
+                        <i class="fas fa-mouse-pointer"></i> マスを選択してください
                     </button>
                     <p class="muted" style="margin: 10px 0 0; font-size: 0.8rem; line-height: 1.5;">
-                        空き地にカーソルを合わせると、選択国が占領できるかどうかの理由が表示されます。海越し隣接は8方向の直線上で海を越えた先に最初に当たる陸地で判定します。
+                        空き地クリック: 占領。自国領クリック: 領土強化（必要FX Reserve = 自国GDP(基軸通貨)の10%）。海越し隣接は8方向の直線上で海を越えた先に最初に当たる陸地で判定します。
                     </p>
                 </form>
 
@@ -339,23 +429,140 @@
                             <span class="swatch" style="background: {{ map_data.country_colors.get(country.name, '#888') }};"></span>
                             <div>
                                 <div class="country-name">{{ country.name }}</div>
-                                <div class="mono muted">領土: {{ country.territory_count }} / 可用軍事: {{ "%.1f"|format(country.available_military) }} / USD: {{ "%.1f"|format(country.usd) }}</div>
+                                <div class="mono muted">領土: {{ country.territory_count }} / 総Power: {{ country.territory_power_total }} / 平均Power: {{ "%.1f"|format(country.territory_power_avg) }}</div>
+                                <div class="mono muted">可用軍事: {{ "%.1f"|format(country.available_military) }} / USD: {{ country.usd|ja_units }}</div>
+                                <div class="mono muted">強化必要FX: {{ country.reinforce_cost_usd|ja_units }} {{ base_currency_name }}</div>
                             </div>
                         </div>
                     {% endfor %}
                 </div>
             </aside>
         </div>
+
+        <section class="panel event-log-panel">
+            <div class="event-log-head">
+                <h2><i class="fas fa-list-ul"></i> 領土イベントログ</h2>
+                <span class="muted mono">最新 {{ territory_event_logs|length }} 件</span>
+            </div>
+            {% if territory_event_logs %}
+                <div class="event-log-scroll">
+                    <table class="event-log-table">
+                        <thead>
+                            <tr>
+                                <th>Turn</th>
+                                <th>Country</th>
+                                <th>Action</th>
+                                <th>Tile</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ev in territory_event_logs %}
+                                <tr>
+                                    <td class="mono">{{ ev.turn }}</td>
+                                    <td>{{ ev.country }}</td>
+                                    <td>{{ "領土拡大" if ev.action == "claim" else "領土強化" }}</td>
+                                    <td class="mono">({{ ev.x }}, {{ ev.y }})</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="event-log-empty">まだ領土イベントはありません。</div>
+            {% endif %}
+        </section>
     </div>
 
     <script>
         const claimX = document.getElementById('claimX');
         const claimY = document.getElementById('claimY');
+        const claimPower = document.getElementById('claimPower');
+        const actionMode = document.getElementById('actionMode');
+        const actionLabel = document.getElementById('actionLabel');
+        const requiredReserve = document.getElementById('requiredReserve');
         const claimBtn = document.getElementById('claimBtn');
         const countrySelect = document.getElementById('country_name');
         const claimOptionsByCountry = {{ claim_options_by_country|tojson }};
+        const countryRows = {{ countries|tojson }};
+        const reinforceCostByCountry = Object.fromEntries(
+            countryRows.map((c) => [c.name, Number(c.reinforce_cost_usd || 0)])
+        );
         const emptyTiles = Array.from(document.querySelectorAll('.tile.empty'));
+        const allTiles = Array.from(document.querySelectorAll('.tile'));
         let selectedTile = null;
+        let selectedMode = null;
+
+        function formatJaUnits(value) {
+            const amount = Number(value);
+            if (!Number.isFinite(amount) || amount === 0) {
+                return '0';
+            }
+
+            const units = ['', '万', '億', '兆', '京', '垓', '秭', '穣', '溝', '澗', '正', '載', '極', '恒河沙', '阿僧祇', '那由他', '不可思議', '無量大数'];
+            const sign = amount < 0 ? '-' : '';
+            const absolute = Math.abs(amount);
+            if (absolute < 10000) {
+                if (Number.isInteger(absolute)) {
+                    return `${sign}${absolute.toLocaleString('ja-JP')}`;
+                }
+                return `${sign}${absolute.toLocaleString('ja-JP', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`;
+            }
+            let rounded = Math.round(absolute);
+            const parts = [];
+            let unitIndex = 0;
+
+            while (rounded > 0) {
+                const chunk = rounded % 10000;
+                if (chunk > 0) {
+                    const unit = unitIndex < units.length ? units[unitIndex] : `10^${unitIndex * 4}`;
+                    parts.push(`${chunk}${unit}`);
+                }
+                rounded = Math.floor(rounded / 10000);
+                unitIndex += 1;
+            }
+
+            return `${sign}${parts.reverse().join('') || '0'}`;
+        }
+
+        function formatReserve(countryName) {
+            const amount = reinforceCostByCountry[countryName] || 0;
+            return `${formatJaUnits(amount)} {{ base_currency_name }}`;
+        }
+
+        function setAction(mode) {
+            selectedMode = mode;
+            if (mode === 'reinforce') {
+                actionMode.value = 'reinforce';
+                actionLabel.value = '領土強化';
+                requiredReserve.value = formatReserve(countrySelect.value);
+                claimBtn.innerHTML = '<i class="fas fa-hammer"></i> 選択領土を強化';
+                return;
+            }
+            if (mode === 'claim') {
+                actionMode.value = 'claim';
+                actionLabel.value = '領土占領';
+                requiredReserve.value = '占領時は不要';
+                claimBtn.innerHTML = '<i class="fas fa-chess-rook"></i> 選択マスを占領';
+                return;
+            }
+            actionMode.value = 'claim';
+            actionLabel.value = '';
+            requiredReserve.value = '';
+            claimBtn.innerHTML = '<i class="fas fa-mouse-pointer"></i> マスを選択してください';
+        }
+
+        function selectTile(tile, mode) {
+            if (selectedTile) {
+                selectedTile.classList.remove('selected');
+            }
+            tile.classList.add('selected');
+            selectedTile = tile;
+            claimX.value = tile.dataset.x;
+            claimY.value = tile.dataset.y;
+            claimPower.value = parseInt(tile.dataset.power || '0', 10) || 0;
+            setAction(mode);
+            claimBtn.disabled = false;
+        }
 
         function clearSelection() {
             if (selectedTile) {
@@ -364,6 +571,8 @@
             }
             claimX.value = '';
             claimY.value = '';
+            claimPower.value = '';
+            setAction(null);
             claimBtn.disabled = true;
         }
 
@@ -379,22 +588,31 @@
                 const key = `${tile.dataset.x},${tile.dataset.y}`;
                 const option = claimOptions[key];
                 const isClaimable = Boolean(option && option.claimable);
+                const powerLabel = option ? option.tile_power : (parseInt(tile.dataset.power || '0', 10) || 0);
                 tile.classList.toggle('claimable', isClaimable);
                 tile.title = option
                     ? option.reason
-                    : '現在の条件では占領判定情報がありません。';
+                    : `現在の条件では占領判定情報がありません。Power ${powerLabel}`;
             });
 
             if (selectedTile) {
-                const selectedKey = `${selectedTile.dataset.x},${selectedTile.dataset.y}`;
-                const selectedOption = claimOptions[selectedKey];
-                if (!(selectedOption && selectedOption.claimable)) {
-                    clearSelection();
+                if (selectedMode === 'claim') {
+                    const selectedKey = `${selectedTile.dataset.x},${selectedTile.dataset.y}`;
+                    const selectedOption = claimOptions[selectedKey];
+                    if (!(selectedOption && selectedOption.claimable)) {
+                        clearSelection();
+                    }
+                } else if (selectedMode === 'reinforce') {
+                    if (selectedTile.dataset.type !== 'owned' || selectedTile.dataset.owner !== selectedCountry) {
+                        clearSelection();
+                    } else {
+                        requiredReserve.value = formatReserve(selectedCountry);
+                    }
                 }
             }
         }
 
-        document.querySelectorAll('.tile').forEach((tile) => {
+        allTiles.forEach((tile) => {
             tile.addEventListener('click', () => {
                 const type = tile.dataset.type;
                 if (type === 'owned') {
@@ -402,8 +620,12 @@
                     if (owner && owner !== countrySelect.value) {
                         countrySelect.value = owner;
                     }
-                    clearSelection();
                     refreshClaimableHighlights();
+                    if (owner === countrySelect.value) {
+                        selectTile(tile, 'reinforce');
+                    } else {
+                        clearSelection();
+                    }
                     return;
                 }
 
@@ -414,15 +636,7 @@
                     return;
                 }
 
-                if (selectedTile) {
-                    selectedTile.classList.remove('selected');
-                }
-
-                tile.classList.add('selected');
-                selectedTile = tile;
-                claimX.value = tile.dataset.x;
-                claimY.value = tile.dataset.y;
-                claimBtn.disabled = false;
+                selectTile(tile, 'claim');
             });
         });
 

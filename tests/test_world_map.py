@@ -125,6 +125,77 @@ class WorldMapTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("海", message)
 
+    def test_auto_intervention_base_currency_zeros_domestic_on_interval(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")  # 基軸通貨(Dollar)
+        beta = world._country_by_name("Beta")    # 非基軸通貨(Yen)
+
+        world.base_auto_intervention_interval = 5
+        world.turn = 5
+        alpha.domestic_money = 2500.0
+        alpha.usd = 1000.0
+        beta.domestic_money = 2500.0
+        beta.usd = 1000.0
+        before_alpha_usd = alpha.usd
+
+        world._auto_intervene_base_currency_domestic()
+
+        self.assertEqual(alpha.domestic_money, 0.0)
+        self.assertGreater(alpha.usd, before_alpha_usd)
+        self.assertEqual(alpha.turn_intervention_usd, 0.0)
+        self.assertGreater(alpha.fx_neutral_intervention_usd, 0.0)
+        self.assertEqual(beta.domestic_money, 2500.0)
+
+    def test_auto_intervention_base_currency_skips_non_interval_turn(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        world.base_auto_intervention_interval = 5
+        world.turn = 4
+        alpha.domestic_money = 1234.0
+        alpha.usd = 999.0
+
+        world._auto_intervene_base_currency_domestic()
+
+        self.assertEqual(alpha.domestic_money, 1234.0)
+        self.assertEqual(alpha.usd, 999.0)
+
+    def test_ai_negative_fx_reserve_triggers_buy_intervention(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")  # base currency & AI
+        beta = world._country_by_name("Beta")    # non-base
+
+        alpha.gdp_usd = 1000.0
+        alpha.usd = -1500.0
+        alpha.domestic_money = 0.0
+        beta.gdp_usd = 1000.0
+        beta.usd = 100.0  # 正値の国は対象外
+        beta_before_usd = beta.usd
+        beta_before_domestic = beta.domestic_money
+        world.turn = 10
+
+        world._auto_cover_ai_negative_fx_reserves()
+
+        # |usd|/5 = 300 を購入して -1200 に改善
+        self.assertAlmostEqual(alpha.usd, -1200.0, places=6)
+        self.assertAlmostEqual(alpha.domestic_money, -300.0, places=6)
+        self.assertAlmostEqual(alpha.turn_intervention_usd, 300.0, places=6)
+        self.assertEqual(beta.usd, beta_before_usd)
+        self.assertEqual(beta.domestic_money, beta_before_domestic)
+
+    def test_ai_negative_fx_reserve_does_not_run_when_usd_positive(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        alpha.gdp_usd = 1000.0
+        alpha.usd = 100.0
+        alpha.domestic_money = 77.0
+        world.turn = 10
+
+        world._auto_cover_ai_negative_fx_reserves()
+
+        self.assertEqual(alpha.usd, 100.0)
+        self.assertEqual(alpha.domestic_money, 77.0)
+        self.assertEqual(alpha.turn_intervention_usd, 0.0)
+
     def test_claim_territory_requires_adjacency(self):
         world = self._build_world()
         world.generate_territory_map(width=18, height=12, seed=44)
