@@ -1,11 +1,14 @@
 # app.py
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from Country import Country
 from World import World
 from Money import Money
 from number_format import format_ja_units
 import random
 import os
+import threading
+import time
+from uuid import uuid4
 app = Flask(__name__)
 
 DEBUG_LOGS = os.getenv("MYGAME_DEBUG_LOGS", "0") == "1"
@@ -16,6 +19,9 @@ world = None
 mp = {"exe":True} #ここはいじくらない
 # Currency Index の基準ターン設定
 CURRENCY_INDEX_BASE_TURN = 80
+advance_jobs = {}
+advance_jobs_lock = threading.Lock()
+advance_turn_lock = threading.Lock()
 
 
 @app.template_filter("ja_units")
@@ -190,17 +196,20 @@ def toggle_operation(name):
     # indexに戻る
     return redirect(url_for('index'))
 
-@app.route('/advance_turn', methods=['POST'])
-def advance_turn():
+def _advance_turn_internal(form_data, progress_callback=None):
     # --- 1. ユーザー入力の取得処理 ---
-    turn_count = int(request.form.get('turn_count', 1))
+    try:
+        turn_count = int(form_data.get('turn_count', 1))
+    except (TypeError, ValueError):
+        turn_count = 1
+    turn_count = max(1, turn_count)
     interest_inputs = {}
     if DEBUG_LOGS:
         print(f"app.py World turn: {world.turn + 1} へ移行")
 
     # 各国の為替介入入力の取得と実行部分
     for country in world.Country_list:
-        intervention_input = request.form.get(f"intervention_{country.name}")
+        intervention_input = form_data.get(f"intervention_{country.name}")
         country.turn_intervention_usd = 0.0
         
         if intervention_input:
@@ -218,7 +227,7 @@ def advance_turn():
     # 各国の金利入力フォームの値を取得
     for country in world.Country_list:
         key = f"interest_{country.money_name}_{country.name}"
-        input_value = request.form.get(key)
+        input_value = form_data.get(key)
         if input_value:
             try:
                 rate = float(input_value)
@@ -474,6 +483,8 @@ def advance_turn():
 
     # ループに入る前に一度経済状況を更新
     update_economy_interests()
+    if progress_callback is not None:
+        progress_callback(0, turn_count, world.turn)
 
     # 指定ターン数だけ時間を進める
     for i in range(turn_count):
@@ -495,8 +506,121 @@ def advance_turn():
 
         # ワールドのターンを進める
         world.Next_turn()
+        if progress_callback is not None:
+            progress_callback(i + 1, turn_count, world.turn)
 
+
+def _cleanup_finished_advance_jobs(max_jobs=30):
+    with advance_jobs_lock:
+        if len(advance_jobs) <= max_jobs:
+            return
+        # 完了済みジョブを古い順に削除する
+        finished = sorted(
+            (
+                (jid, row.get("updated_at", 0.0))
+                for jid, row in advance_jobs.items()
+                if row.get("status") in ("done", "error")
+            ),
+            key=lambda item: item[1],
+        )
+        for jid, _ in finished:
+            if len(advance_jobs) <= max_jobs:
+                break
+            advance_jobs.pop(jid, None)
+
+
+def _advance_turn_worker(job_id, form_data):
+    try:
+        with advance_turn_lock:
+            def on_progress(step, total, current_turn):
+                percent = 100.0 if total <= 0 else (float(step) / float(total)) * 100.0
+                with advance_jobs_lock:
+                    job = advance_jobs.get(job_id)
+                    if not job:
+                        return
+                    job["current_step"] = int(step)
+                    job["total_steps"] = int(total)
+                    job["current_turn"] = int(current_turn)
+                    job["progress_percent"] = max(0.0, min(100.0, percent))
+                    job["updated_at"] = time.time()
+
+            _advance_turn_internal(form_data, progress_callback=on_progress)
+
+        with advance_jobs_lock:
+            job = advance_jobs.get(job_id)
+            if job:
+                job["status"] = "done"
+                job["current_step"] = int(job.get("total_steps", 0))
+                job["current_turn"] = int(job.get("target_turn", job.get("current_turn", 0)))
+                job["progress_percent"] = 100.0
+                job["message"] = "ターン進行が完了しました。"
+                job["updated_at"] = time.time()
+    except Exception as exc:
+        with advance_jobs_lock:
+            job = advance_jobs.get(job_id)
+            if job:
+                job["status"] = "error"
+                job["message"] = f"ターン進行でエラー: {exc}"
+                job["updated_at"] = time.time()
+
+
+@app.route('/advance_turn', methods=['POST'])
+def advance_turn():
+    form_data = request.form.to_dict(flat=True)
+    with advance_turn_lock:
+        _advance_turn_internal(form_data)
     return redirect(url_for('index'))
+
+
+@app.route('/advance_turn/start', methods=['POST'])
+def advance_turn_start():
+    form_data = request.form.to_dict(flat=True)
+    try:
+        turn_count = int(form_data.get("turn_count", 1))
+    except (TypeError, ValueError):
+        turn_count = 1
+    turn_count = max(1, turn_count)
+
+    with advance_jobs_lock:
+        running = next(
+            ((jid, row) for jid, row in advance_jobs.items() if row.get("status") == "running"),
+            None,
+        )
+        if running is not None:
+            running_id, running_row = running
+            payload = {"job_id": running_id}
+            payload.update(running_row)
+            return jsonify(payload), 409
+
+        start_turn = int(world.turn)
+        job_id = uuid4().hex
+        advance_jobs[job_id] = {
+            "status": "running",
+            "message": "ターン進行を開始しました。",
+            "current_step": 0,
+            "total_steps": turn_count,
+            "current_turn": start_turn,
+            "start_turn": start_turn,
+            "target_turn": start_turn + turn_count,
+            "progress_percent": 0.0,
+            "updated_at": time.time(),
+        }
+
+    worker = threading.Thread(target=_advance_turn_worker, args=(job_id, form_data), daemon=True)
+    worker.start()
+    _cleanup_finished_advance_jobs()
+    return jsonify({"job_id": job_id}), 202
+
+
+@app.route('/advance_turn/progress/<job_id>', methods=['GET'])
+def advance_turn_progress(job_id):
+    with advance_jobs_lock:
+        job = advance_jobs.get(job_id)
+        if job is None:
+            return jsonify({"error": "job_not_found"}), 404
+        payload = {"job_id": job_id}
+        payload.update(job)
+    return jsonify(payload)
 
 
 @app.route('/submit_budget', methods=['POST'])

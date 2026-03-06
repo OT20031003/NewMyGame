@@ -394,6 +394,15 @@
             justify-content: center;
             align-items: center;
         }
+        .loader-box {
+            width: min(92vw, 420px);
+            padding: 22px 20px 18px;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(15, 23, 42, 0.92);
+            box-shadow: 0 22px 48px rgba(2, 6, 23, 0.55);
+            text-align: center;
+        }
         .spinner {
             width: 50px;
             height: 50px;
@@ -401,6 +410,38 @@
             border-left-color: var(--color-primary);
             border-radius: 50%;
             animation: spin 1s linear infinite;
+            margin: 0 auto 14px;
+        }
+        .loader-title {
+            font-weight: 700;
+            color: #e2e8f0;
+            margin-bottom: 8px;
+        }
+        .loader-turn {
+            font-family: 'JetBrains Mono', monospace;
+            color: #cbd5e1;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+        .loader-progress-track {
+            height: 9px;
+            width: 100%;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(148, 163, 184, 0.2);
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            margin-bottom: 8px;
+        }
+        .loader-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #2563eb, #06b6d4);
+            transition: width 0.2s ease;
+        }
+        .loader-percent {
+            font-family: 'JetBrains Mono', monospace;
+            color: #93c5fd;
+            font-size: 0.85rem;
         }
         @keyframes spin { 100% { transform: rotate(360deg); } }
 
@@ -429,7 +470,17 @@
     </style>
 </head>
 <body>
-    <div id="loader"><div class="spinner"></div></div>
+    <div id="loader">
+        <div class="loader-box">
+            <div class="spinner"></div>
+            <div class="loader-title">ターン処理中</div>
+            <div class="loader-turn" id="loaderTurnText">Turn {{ turn }} / {{ turn }}</div>
+            <div class="loader-progress-track">
+                <div class="loader-progress-fill" id="loaderProgressFill"></div>
+            </div>
+            <div class="loader-percent" id="loaderPercentText">0%</div>
+        </div>
+    </div>
     {% if saved %}
     <div id="saveNotice" class="save-notice">
         <i class="fas fa-check-circle"></i> Saved successfully.
@@ -438,7 +489,7 @@
 
     <div class="app-container">
         
-        <form method="POST" action="/advance_turn" onsubmit="showLoader()">
+        <form id="advanceTurnForm" method="POST" action="/advance_turn">
             
             <header class="sticky-header">
                 <div class="header-title">
@@ -722,13 +773,16 @@
     </div>
 
     <script>
-        // --- Loader ---
-        function showLoader() {
-            document.getElementById('loader').style.display = 'flex';
-        }
-
         // --- Toggle View Logic ---
         document.addEventListener('DOMContentLoaded', () => {
+            const advanceForm = document.getElementById('advanceTurnForm');
+            const loader = document.getElementById('loader');
+            const loaderTurnText = document.getElementById('loaderTurnText');
+            const loaderProgressFill = document.getElementById('loaderProgressFill');
+            const loaderPercentText = document.getElementById('loaderPercentText');
+            const turnCountInput = document.getElementById('turn_count_input');
+            let isAdvancing = false;
+
             const toggleBtn = document.getElementById('toggleViewBtn');
             const icon = toggleBtn.querySelector('i');
             const span = toggleBtn.querySelector('span');
@@ -761,6 +815,92 @@
                 setTimeout(() => {
                     saveNotice.remove();
                 }, 2800);
+            }
+
+            function setLoaderVisible(visible) {
+                if (!loader) {
+                    return;
+                }
+                loader.style.display = visible ? 'flex' : 'none';
+            }
+
+            function updateAdvanceProgress(job) {
+                const totalSteps = Math.max(0, Number(job.total_steps || 0));
+                const currentStep = Math.max(0, Number(job.current_step || 0));
+                const currentTurn = Math.max(0, Number(job.current_turn || 0));
+                const targetTurn = Math.max(currentTurn, Number(job.target_turn || currentTurn));
+                const percent = totalSteps <= 0
+                    ? 0
+                    : Math.max(0, Math.min(100, (currentStep / totalSteps) * 100));
+
+                loaderTurnText.textContent = `Turn ${currentTurn} / ${targetTurn} (${currentStep}/${totalSteps})`;
+                loaderProgressFill.style.width = `${percent}%`;
+                loaderPercentText.textContent = `${percent.toFixed(0)}%`;
+            }
+
+            async function pollAdvanceJob(jobId) {
+                while (true) {
+                    const res = await fetch(`/advance_turn/progress/${encodeURIComponent(jobId)}`, {
+                        method: 'GET',
+                        cache: 'no-store',
+                    });
+                    if (!res.ok) {
+                        throw new Error('progress fetch failed');
+                    }
+                    const job = await res.json();
+                    updateAdvanceProgress(job);
+
+                    if (job.status === 'done') {
+                        window.location.href = '/index';
+                        return;
+                    }
+                    if (job.status === 'error') {
+                        throw new Error(job.message || 'advance turn failed');
+                    }
+                    await new Promise((resolve) => setTimeout(resolve, 220));
+                }
+            }
+
+            if (advanceForm) {
+                advanceForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    if (isAdvancing) {
+                        return;
+                    }
+                    isAdvancing = true;
+
+                    const currentTurn = {{ turn|int }};
+                    const requestedTurns = Math.max(1, parseInt(turnCountInput?.value || '1', 10) || 1);
+                    loaderTurnText.textContent = `Turn ${currentTurn} / ${currentTurn + requestedTurns} (0/${requestedTurns})`;
+                    loaderProgressFill.style.width = '0%';
+                    loaderPercentText.textContent = '0%';
+                    setLoaderVisible(true);
+
+                    try {
+                        const res = await fetch('/advance_turn/start', {
+                            method: 'POST',
+                            body: new FormData(advanceForm),
+                        });
+                        const data = await res.json().catch(() => ({}));
+                        if (!res.ok && res.status !== 409) {
+                            throw new Error('start failed');
+                        }
+                        const jobId = data.job_id;
+                        if (!jobId) {
+                            throw new Error('job id missing');
+                        }
+                        if (typeof data.current_turn !== 'undefined') {
+                            updateAdvanceProgress(data);
+                        }
+                        await pollAdvanceJob(jobId);
+                    } catch (err) {
+                        console.error(err);
+                        setLoaderVisible(false);
+                        isAdvancing = false;
+                        alert('ターン進行中にエラーが発生しました。画面を再読み込みします。');
+                        window.location.href = '/index';
+                    }
+                });
             }
 
             function applyViewMode(mode) {

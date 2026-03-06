@@ -161,12 +161,22 @@
 
         .capital-mark {
             position: absolute;
-            top: 1px;
-            left: 2px;
-            font-size: 0.64rem;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 13px;
+            height: 13px;
+            border-radius: 999px;
+            border: 1.5px solid #f8fafc;
+            background: rgba(2, 8, 20, 0.86);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffd76b;
+            font-size: 0.47rem;
             line-height: 1;
-            color: #fde047;
-            text-shadow: 0 0 6px rgba(255, 255, 255, 0.45);
+            text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
             pointer-events: none;
         }
 
@@ -378,7 +388,7 @@
                                     {% set is_capital = capital and capital[0] == x and capital[1] == y %}
                                     <button type="button" class="tile owned {{ 'capital' if is_capital else '' }}" data-x="{{ x }}" data-y="{{ y }}" data-type="owned" data-owner="{{ cell }}" data-power="{{ map_data.tile_power[y][x] }}" data-capital="{{ '1' if is_capital else '0' }}" title="{{ cell }}{{ ' (首都)' if is_capital else '' }}" style="--owner-color: {{ map_data.country_colors.get(cell, '#888') }};">
                                         {% if is_capital %}
-                                            <span class="capital-mark">★</span>
+                                            <span class="capital-mark"><i class="fas fa-crown" aria-hidden="true"></i></span>
                                         {% endif %}
                                         <span class="tile-power">{{ map_data.tile_power[y][x] }}</span>
                                     </button>
@@ -448,7 +458,7 @@
                     <div class="legend-item"><span class="swatch" style="background: linear-gradient(135deg, #0f2742, var(--sea));"></span> 海 (獲得不可)</div>
                     <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #8f7757, var(--empty-land)); box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.7);"></span> 強調された空き地 (選択国が占領可能)</div>
                     <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #8f7757, var(--empty-land)); opacity: 0.42;"></span> 空き地 (現在は占領不可)</div>
-                    <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #5a4f17, #d4b93c);"></span> 首都マス (★)</div>
+                    <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #19273f, #ffd76b);"></span> 首都マス (中央クラウン)</div>
                 </div>
 
                 <div class="country-list">
