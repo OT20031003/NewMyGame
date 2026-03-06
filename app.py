@@ -546,6 +546,7 @@ def world_map():
         available_military = world.get_country_available_military(country.name)
         power_stats = world.get_country_territory_power_stats(country.name)
         reinforce_cost_usd = world.get_country_reinforce_cost_usd(country.name)
+        capital = world.get_country_capital(country.name)
         countries.append({
             "name": country.name,
             "money_name": country.money_name,
@@ -555,6 +556,8 @@ def world_map():
             "territory_power_total": power_stats["total_power"],
             "territory_power_avg": power_stats["average_power"],
             "reinforce_cost_usd": reinforce_cost_usd,
+            "capital_x": capital[0] if capital else None,
+            "capital_y": capital[1] if capital else None,
         })
 
     countries = sorted(countries, key=lambda c: c["name"])
@@ -590,6 +593,8 @@ def claim_world_map():
 
     if action_mode == "reinforce":
         success, msg = world.reinforce_territory(country_name, x, y)
+    elif action_mode == "set_capital":
+        success, msg = world.set_capital(country_name, x, y)
     else:
         success, msg = world.claim_territory(country_name, x, y)
     if success:

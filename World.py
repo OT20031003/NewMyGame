@@ -30,6 +30,8 @@ class World:
     MIN_TILE_POWER = 1
     MAX_TILE_POWER = 250
     REINFORCE_GDP_RATIO = 0.10
+    AI_REINFORCE_ATTEMPT_CHANCE = 0.30
+    AI_CAPITAL_REINFORCE_WEIGHT = 1.45
     BASE_AUTO_INTERVENTION_INTERVAL = 5
     BASE_AUTO_INTERVENTION_EPSILON = 0.5
     TERRITORY_EVENT_LOG_LIMIT = 600
@@ -295,6 +297,18 @@ class World:
                     positions[owner].append((x, y))
         return positions
 
+    def _first_country_tile_position(self, country_name, tiles=None):
+        source_tiles = tiles
+        if source_tiles is None:
+            if not self.territory_map:
+                return None
+            source_tiles = self.territory_map.get("tiles", [])
+        for y, row in enumerate(source_tiles):
+            for x, owner in enumerate(row):
+                if owner == country_name:
+                    return x, y
+        return None
+
     def _terrain_power_from_score(self, score):
         # 地形スコアをもとに 1〜4 の初期Powerを与える
         normalized = max(0.0, min(1.0, score / 3.2))
@@ -320,6 +334,83 @@ class World:
             return int(row[x])
         except (TypeError, ValueError):
             return 0
+
+    def _normalize_capitals(self, raw_capitals, tiles, width, height):
+        normalized = {}
+        if isinstance(raw_capitals, dict):
+            for country in self.Country_list:
+                raw_pos = raw_capitals.get(country.name)
+                if not isinstance(raw_pos, (list, tuple)) or len(raw_pos) != 2:
+                    continue
+                try:
+                    x = int(raw_pos[0])
+                    y = int(raw_pos[1])
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= x < width and 0 <= y < height and tiles[y][x] == country.name:
+                    normalized[country.name] = [x, y]
+
+        for country in self.Country_list:
+            if country.name in normalized:
+                continue
+            pos = self._first_country_tile_position(country.name, tiles=tiles)
+            if pos is not None:
+                normalized[country.name] = [pos[0], pos[1]]
+        return normalized
+
+    def get_country_capital(self, country_name):
+        self.ensure_territory_map()
+        capitals = self.territory_map.get("capitals", {})
+        if not isinstance(capitals, dict):
+            return None
+        raw_pos = capitals.get(country_name)
+        if not isinstance(raw_pos, (list, tuple)) or len(raw_pos) != 2:
+            return None
+        try:
+            x = int(raw_pos[0])
+            y = int(raw_pos[1])
+        except (TypeError, ValueError):
+            return None
+        width = self.territory_map.get("width", 0)
+        height = self.territory_map.get("height", 0)
+        if x < 0 or y < 0 or x >= width or y >= height:
+            return None
+        if self.territory_map["tiles"][y][x] != country_name:
+            return None
+        return x, y
+
+    def set_capital(self, country_name, x, y):
+        self.ensure_territory_map()
+        width = self.territory_map["width"]
+        height = self.territory_map["height"]
+        if x < 0 or y < 0 or x >= width or y >= height:
+            return False, "指定したマスは地図の範囲外です。"
+
+        country = self._country_by_name(country_name)
+        if country is None:
+            return False, "対象の国が見つかりません。"
+
+        owner = self.territory_map["tiles"][y][x]
+        if owner != country_name:
+            return False, "自国領のみ首都に設定できます。"
+
+        capitals = self.territory_map.get("capitals")
+        if not isinstance(capitals, dict):
+            capitals = {}
+            self.territory_map["capitals"] = capitals
+
+        current = None
+        raw_current = capitals.get(country_name)
+        if isinstance(raw_current, (list, tuple)) and len(raw_current) == 2:
+            try:
+                current = (int(raw_current[0]), int(raw_current[1]))
+            except (TypeError, ValueError):
+                current = None
+        if current == (x, y):
+            return True, f"{country_name} の首都は既に ({x}, {y}) です。"
+
+        capitals[country_name] = [x, y]
+        return True, f"{country_name} の首都を ({x}, {y}) に設定しました。"
 
     def _country_gdp_base_currency(self, country_name):
         country = self._country_by_name(country_name)
@@ -450,6 +541,7 @@ class World:
         valid_owners = {c.name for c in self.Country_list}
         normalized_tiles = []
         raw_tile_power = self.territory_map.get("tile_power", [])
+        raw_capitals = self.territory_map.get("capitals", {})
         has_raw_tile_power = isinstance(raw_tile_power, list) and len(raw_tile_power) == height
         normalized_tile_power = []
         for row in tiles:
@@ -490,11 +582,13 @@ class World:
             for country in self.Country_list:
                 normalized_committed[country.name] = 0.0
 
+        normalized_capitals = self._normalize_capitals(raw_capitals, normalized_tiles, width, height)
         self.territory_map = {
             "width": width,
             "height": height,
             "tiles": normalized_tiles,
             "tile_power": normalized_tile_power,
+            "capitals": normalized_capitals,
             "country_colors": self._assign_country_colors(self.territory_map.get("country_colors")),
             "military_committed": normalized_committed,
             "seed": self.territory_map.get("seed"),
@@ -614,6 +708,16 @@ class World:
             x, y = rng.choice(candidates)
             tiles[y][x] = country_name
 
+        capitals = {}
+        for country_name in country_names:
+            seed_pos = seed_positions.get(country_name)
+            if seed_pos is not None:
+                capitals[country_name] = [seed_pos[0], seed_pos[1]]
+                continue
+            pos = self._first_country_tile_position(country_name, tiles=tiles)
+            if pos is not None:
+                capitals[country_name] = [pos[0], pos[1]]
+
         # 空き地Powerは0固定。保有領土のみ初期Powerを付与。
         for y in range(height):
             for x in range(width):
@@ -628,6 +732,7 @@ class World:
             "height": height,
             "tiles": tiles,
             "tile_power": tile_power,
+            "capitals": capitals,
             "country_colors": self._assign_country_colors(),
             "military_committed": {c.name: 0.0 for c in self.Country_list},
             "seed": seed,
@@ -818,6 +923,12 @@ class World:
         if current_power <= 0:
             current_power = self.MIN_TILE_POWER
             self.territory_map["tile_power"][y][x] = current_power
+        capitals = self.territory_map.get("capitals")
+        if not isinstance(capitals, dict):
+            capitals = {}
+            self.territory_map["capitals"] = capitals
+        if country_name not in capitals:
+            capitals[country_name] = [x, y]
         self._append_territory_event_log(
             country_name=country_name,
             action="claim",
@@ -933,6 +1044,65 @@ class World:
                     break
 
         return list(candidates)
+
+    def _candidate_reinforce_tiles(self, country_name):
+        self.ensure_territory_map()
+        tiles = self.territory_map["tiles"]
+        candidates = []
+        for y, row in enumerate(tiles):
+            for x, owner in enumerate(row):
+                if owner != country_name:
+                    continue
+                if self._get_tile_power_value(x, y) >= self.MAX_TILE_POWER:
+                    continue
+                candidates.append((x, y))
+        return candidates
+
+    def _select_ai_reinforce_target(self, country_name):
+        candidates = self._candidate_reinforce_tiles(country_name)
+        if not candidates:
+            return None
+
+        capital = self.get_country_capital(country_name)
+        weights = []
+        for x, y in candidates:
+            current_power = max(self.MIN_TILE_POWER, self._get_tile_power_value(x, y))
+            deficit_ratio = max(0.0, float(self.MAX_TILE_POWER - current_power) / float(self.MAX_TILE_POWER))
+            weight = 1.0 + (deficit_ratio * 0.25)
+            if capital is not None and (x, y) == capital:
+                weight *= self.AI_CAPITAL_REINFORCE_WEIGHT
+            weights.append(max(0.01, weight))
+
+        return random.choices(candidates, weights=weights, k=1)[0]
+
+    def auto_reinforce_territory_for_ai(self, attempt_chance=None):
+        self.ensure_territory_map()
+        if attempt_chance is None:
+            chance = float(self.AI_REINFORCE_ATTEMPT_CHANCE)
+        else:
+            try:
+                chance = float(attempt_chance)
+            except (TypeError, ValueError):
+                chance = float(self.AI_REINFORCE_ATTEMPT_CHANCE)
+        chance = max(0.0, min(1.0, chance))
+
+        results = []
+        for country in self.Country_list:
+            if not getattr(country, "selfoperation", False):
+                continue
+            if random.random() > chance:
+                continue
+
+            target = self._select_ai_reinforce_target(country.name)
+            if target is None:
+                continue
+            x, y = target
+            ok, msg = self.reinforce_territory(country.name, x, y)
+            if not ok:
+                continue
+            results.append({"country_name": country.name, "x": x, "y": y, "message": msg})
+
+        return results
 
     def auto_expand_territory_for_ai(self, max_claims_per_country=1):
         self.ensure_territory_map()
@@ -1108,6 +1278,8 @@ class World:
 
         # AIモードの国は毎ターン自動で領土拡大を試みる（1ターン1マス）
         self.auto_expand_territory_for_ai(max_claims_per_country=1)
+        # AIモードの国は確率で領土強化を行う。首都は通常より少し優先する。
+        self.auto_reinforce_territory_for_ai()
 
         # このターンの貿易収支を一時記録する辞書を作成
         current_turn_trade_balance = {c.name: 0.0 for c in self.Country_list}

@@ -1,3 +1,4 @@
+import random
 import unittest
 
 from Country import Country
@@ -454,6 +455,73 @@ class WorldMapTests(unittest.TestCase):
         self.assertEqual(world.territory_map["tiles"][0][1], world.EMPTY_TILE)
         self.assertEqual(world.territory_map["military_committed"]["Alpha"], 0.0)
         self.assertEqual(results, [])
+
+    def test_set_capital_updates_country_capital(self):
+        world = self._build_world()
+        world.territory_map = {
+            "width": 3,
+            "height": 1,
+            "tiles": [["Alpha", "Alpha", "Beta"]],
+            "tile_power": [[5, 7, 8]],
+            "capitals": {"Alpha": [0, 0], "Beta": [2, 0]},
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        ok, _ = world.set_capital("Alpha", 1, 0)
+
+        self.assertTrue(ok)
+        self.assertEqual(world.get_country_capital("Alpha"), (1, 0))
+
+    def test_set_capital_rejects_non_owned_tile(self):
+        world = self._build_world()
+        world.territory_map = {
+            "width": 3,
+            "height": 1,
+            "tiles": [["Alpha", "Beta", ""]],
+            "tile_power": [[5, 7, 0]],
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        ok, message = world.set_capital("Alpha", 1, 0)
+
+        self.assertFalse(ok)
+        self.assertIn("自国領", message)
+
+    def test_ai_reinforce_target_prefers_capital_tile(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+        beta = world._country_by_name("Beta")
+        gamma = world._country_by_name("Gamma")
+        beta.selfoperation = False
+        gamma.selfoperation = False
+        alpha.usd = 1_000_000_000.0
+        alpha.gdp_usd = 1000.0
+
+        world.territory_map = {
+            "width": 2,
+            "height": 1,
+            "tiles": [["Alpha", "Alpha"]],
+            "tile_power": [[10, 10]],
+            "capitals": {"Alpha": [0, 0]},
+            "country_colors": {"Alpha": "#111", "Beta": "#222", "Gamma": "#333"},
+            "military_committed": {"Alpha": 0.0, "Beta": 0.0, "Gamma": 0.0},
+            "seed": None,
+        }
+
+        random.seed(12345)
+        total = 3000
+        capital_hits = 0
+        for _ in range(total):
+            target = world._select_ai_reinforce_target("Alpha")
+            self.assertIsNotNone(target)
+            if target == (0, 0):
+                capital_hits += 1
+
+        self.assertGreater(capital_hits / total, 0.55)
 
     def test_next_turn_calls_ai_auto_expand(self):
         world = self._build_world()

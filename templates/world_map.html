@@ -154,6 +154,22 @@
             transform: scale(1.08);
         }
 
+        .tile.owned.capital {
+            outline: 1px solid rgba(253, 224, 71, 0.95);
+            box-shadow: inset 0 0 0 1px rgba(253, 230, 138, 0.85);
+        }
+
+        .capital-mark {
+            position: absolute;
+            top: 1px;
+            left: 2px;
+            font-size: 0.64rem;
+            line-height: 1;
+            color: #fde047;
+            text-shadow: 0 0 6px rgba(255, 255, 255, 0.45);
+            pointer-events: none;
+        }
+
         .tile-power {
             font-size: 0.56rem;
             line-height: 1;
@@ -358,7 +374,12 @@
                                         <span class="tile-power">{{ map_data.tile_power[y][x] }}</span>
                                     </button>
                                 {% else %}
-                                    <button type="button" class="tile owned" data-x="{{ x }}" data-y="{{ y }}" data-type="owned" data-owner="{{ cell }}" data-power="{{ map_data.tile_power[y][x] }}" title="{{ cell }}" style="--owner-color: {{ map_data.country_colors.get(cell, '#888') }};">
+                                    {% set capital = map_data.capitals.get(cell) if map_data.capitals else none %}
+                                    {% set is_capital = capital and capital[0] == x and capital[1] == y %}
+                                    <button type="button" class="tile owned {{ 'capital' if is_capital else '' }}" data-x="{{ x }}" data-y="{{ y }}" data-type="owned" data-owner="{{ cell }}" data-power="{{ map_data.tile_power[y][x] }}" data-capital="{{ '1' if is_capital else '0' }}" title="{{ cell }}{{ ' (首都)' if is_capital else '' }}" style="--owner-color: {{ map_data.country_colors.get(cell, '#888') }};">
+                                        {% if is_capital %}
+                                            <span class="capital-mark">★</span>
+                                        {% endif %}
                                         <span class="tile-power">{{ map_data.tile_power[y][x] }}</span>
                                     </button>
                                 {% endif %}
@@ -370,7 +391,7 @@
 
             <aside class="panel side">
                 {% if message %}
-                    {% set is_error = ('不足' in message) or ('不正' in message) or ('海' in message) or ('範囲外' in message) or ('隣接' in message) or ('見つかりません' in message) %}
+                    {% set is_error = ('不足' in message) or ('不正' in message) or ('海' in message) or ('範囲外' in message) or ('隣接' in message) or ('見つかりません' in message) or ('できません' in message) %}
                     <div class="message {{ 'error' if is_error else '' }}">{{ message }}</div>
                 {% endif %}
 
@@ -406,12 +427,19 @@
                         <label for="requiredReserve">必要FX Reserve</label>
                         <input id="requiredReserve" type="text" value="" readonly>
                     </div>
+                    <div>
+                        <label for="capitalStatus">首都ステータス</label>
+                        <input id="capitalStatus" type="text" value="" readonly>
+                    </div>
 
                     <button class="btn" id="claimBtn" type="submit" disabled>
                         <i class="fas fa-mouse-pointer"></i> マスを選択してください
                     </button>
+                    <button class="btn" id="setCapitalBtn" type="button" disabled>
+                        <i class="fas fa-crown"></i> 首都に設定
+                    </button>
                     <p class="muted" style="margin: 10px 0 0; font-size: 0.8rem; line-height: 1.5;">
-                        空き地クリック: 占領。自国領クリック: 領土強化（必要FX Reserve = 自国GDP(基軸通貨)の10%）。海越し隣接は8方向の直線上で海を越えた先に最初に当たる陸地で判定します。
+                        空き地クリック: 占領。自国領クリック: 領土強化（必要FX Reserve = 自国GDP(基軸通貨)の10%）。自国領を選択して「首都に設定」で首都を変更できます。海越し隣接は8方向の直線上で海を越えた先に最初に当たる陸地で判定します。
                     </p>
                 </form>
 
@@ -420,6 +448,7 @@
                     <div class="legend-item"><span class="swatch" style="background: linear-gradient(135deg, #0f2742, var(--sea));"></span> 海 (獲得不可)</div>
                     <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #8f7757, var(--empty-land)); box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.7);"></span> 強調された空き地 (選択国が占領可能)</div>
                     <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #8f7757, var(--empty-land)); opacity: 0.42;"></span> 空き地 (現在は占領不可)</div>
+                    <div class="legend-item"><span class="swatch" style="background: linear-gradient(140deg, #5a4f17, #d4b93c);"></span> 首都マス (★)</div>
                 </div>
 
                 <div class="country-list">
@@ -432,6 +461,7 @@
                                 <div class="mono muted">領土: {{ country.territory_count }} / 総Power: {{ country.territory_power_total }} / 平均Power: {{ "%.1f"|format(country.territory_power_avg) }}</div>
                                 <div class="mono muted">可用軍事: {{ "%.1f"|format(country.available_military) }} / USD: {{ country.usd|ja_units }}</div>
                                 <div class="mono muted">強化必要FX: {{ country.reinforce_cost_usd|ja_units }} {{ base_currency_name }}</div>
+                                <div class="mono muted">首都: {% if country.capital_x is not none and country.capital_y is not none %}({{ country.capital_x }}, {{ country.capital_y }}){% else %}未設定{% endif %}</div>
                             </div>
                         </div>
                     {% endfor %}
@@ -480,12 +510,25 @@
         const actionMode = document.getElementById('actionMode');
         const actionLabel = document.getElementById('actionLabel');
         const requiredReserve = document.getElementById('requiredReserve');
+        const capitalStatus = document.getElementById('capitalStatus');
         const claimBtn = document.getElementById('claimBtn');
+        const setCapitalBtn = document.getElementById('setCapitalBtn');
         const countrySelect = document.getElementById('country_name');
+        const claimForm = document.getElementById('claimForm');
         const claimOptionsByCountry = {{ claim_options_by_country|tojson }};
         const countryRows = {{ countries|tojson }};
         const reinforceCostByCountry = Object.fromEntries(
             countryRows.map((c) => [c.name, Number(c.reinforce_cost_usd || 0)])
+        );
+        const capitalsByCountry = Object.fromEntries(
+            countryRows.map((c) => {
+                const cx = Number(c.capital_x);
+                const cy = Number(c.capital_y);
+                if (Number.isInteger(cx) && Number.isInteger(cy)) {
+                    return [c.name, [cx, cy]];
+                }
+                return [c.name, null];
+            })
         );
         const emptyTiles = Array.from(document.querySelectorAll('.tile.empty'));
         const allTiles = Array.from(document.querySelectorAll('.tile'));
@@ -529,6 +572,35 @@
             return `${formatJaUnits(amount)} {{ base_currency_name }}`;
         }
 
+        function refreshCapitalActionState() {
+            setCapitalBtn.disabled = true;
+            setCapitalBtn.innerHTML = '<i class="fas fa-crown"></i> 首都に設定';
+            capitalStatus.value = '';
+
+            if (!selectedTile) {
+                return;
+            }
+            if (selectedTile.dataset.type !== 'owned') {
+                return;
+            }
+            if (selectedTile.dataset.owner !== countrySelect.value) {
+                return;
+            }
+
+            const x = parseInt(selectedTile.dataset.x || '-1', 10);
+            const y = parseInt(selectedTile.dataset.y || '-1', 10);
+            const capital = capitalsByCountry[countrySelect.value];
+            if (capital && capital[0] === x && capital[1] === y) {
+                setCapitalBtn.disabled = true;
+                setCapitalBtn.innerHTML = '<i class="fas fa-crown"></i> 首都設定済み';
+                capitalStatus.value = 'このマスは首都です';
+                return;
+            }
+
+            setCapitalBtn.disabled = false;
+            capitalStatus.value = 'このマスは首都ではありません';
+        }
+
         function setAction(mode) {
             selectedMode = mode;
             if (mode === 'reinforce') {
@@ -562,6 +634,7 @@
             claimPower.value = parseInt(tile.dataset.power || '0', 10) || 0;
             setAction(mode);
             claimBtn.disabled = false;
+            refreshCapitalActionState();
         }
 
         function clearSelection() {
@@ -574,6 +647,7 @@
             claimPower.value = '';
             setAction(null);
             claimBtn.disabled = true;
+            refreshCapitalActionState();
         }
 
         function getClaimOptions(countryName) {
@@ -607,6 +681,7 @@
                         clearSelection();
                     } else {
                         requiredReserve.value = formatReserve(selectedCountry);
+                        refreshCapitalActionState();
                     }
                 }
             }
@@ -645,7 +720,19 @@
             refreshClaimableHighlights();
         });
 
+        setCapitalBtn.addEventListener('click', () => {
+            if (!selectedTile || selectedTile.dataset.type !== 'owned') {
+                return;
+            }
+            if (selectedTile.dataset.owner !== countrySelect.value) {
+                return;
+            }
+            actionMode.value = 'set_capital';
+            claimForm.submit();
+        });
+
         refreshClaimableHighlights();
+        refreshCapitalActionState();
     </script>
 </body>
 </html>
