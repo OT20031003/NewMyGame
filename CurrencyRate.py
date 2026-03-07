@@ -4,6 +4,26 @@ import os
 DEBUG_LOGS = os.getenv("MYGAME_DEBUG_LOGS", "0") == "1"
 
 class CurrencyRate:
+    INFLATION_DIFF_WEIGHT = 0.08
+    INTEREST_TANH_SCALE = 0.12
+    INTEREST_EFFECT_WEIGHT = 0.05
+    TRADE_TANH_SCALE = 0.80
+    TRADE_EFFECT_WEIGHT = 0.015
+    GROWTH_TANH_SCALE = 0.08
+    GROWTH_EFFECT_WEIGHT = 0.004
+    INTERVENTION_TANH_SCALE = 3.0
+    INTERVENTION_EFFECT_WEIGHT = 0.20
+    INTERVENTION_ROOT_TANH_SCALE = 1.2
+    INTERVENTION_ROOT_EFFECT_WEIGHT = 0.05
+    GDP_CAPITA_EFFECT_WEIGHT = 0.012
+    ANCHOR_TANH_SCALE = 2.0
+    ANCHOR_EFFECT_WEIGHT = 0.030
+    ANCHOR_BLEND_WARMUP_TURNS = 30
+    ANCHOR_BLEND_BASE = 0.025
+    ANCHOR_BLEND_WARMUP_EXTRA = 0.16
+    RANDOM_NOISE_STEP = 0.0011
+    MAX_TURN_CHANGE = 0.035
+
     def __init__(self, currency: str, rate: float):
         self.currency = currency
         self.rate = rate
@@ -37,7 +57,7 @@ class CurrencyRate:
         # --- 1. 購買力平価 (PPP) 的な圧力 ---
         # インフレ率の差分を計算 (自国インフレが高いとプラス -> レート上昇=通貨安)
         # 【修正】係数を掛け、1ターンですべて反映させず、30%程度ずつ織り込ませる
-        inflation_diff = ((inflation - base_inflation) / 100.0) * 0.3
+        inflation_diff = ((inflation - base_inflation) / 100.0) * self.INFLATION_DIFF_WEIGHT
 
         # --- 2. 実質金利差 (Real Interest Rate Differential) ---
         # 実質金利 = 名目金利 - インフレ率
@@ -46,11 +66,11 @@ class CurrencyRate:
         real_interest_diff = real_interest - base_real_interest
         
         # 金利への感応度 (係数 0.10)
-        interest_effect = math.tanh(real_interest_diff * 0.2) * 0.17
+        interest_effect = math.tanh(real_interest_diff * self.INTEREST_TANH_SCALE) * self.INTEREST_EFFECT_WEIGHT
 
         # --- 3. 貿易収支 (Trade Balance) ---
         trade_diff = trade_balance_ratio - base_trade_balance_ratio
-        trade_effect = math.tanh(trade_diff * 2.0) * 0.07
+        trade_effect = math.tanh(trade_diff * self.TRADE_TANH_SCALE) * self.TRADE_EFFECT_WEIGHT
 
         # --- 4. 経済成長率 (Real GDP Growth) ---
         # 【重要】名目成長率(gdp_growth)からインフレ率を引いて「実質成長率」にする
@@ -61,12 +81,16 @@ class CurrencyRate:
         real_growth_diff = real_gdp_growth - base_real_gdp_growth
         
         # 実質成長率が高いなら通貨高要因
-        growth_effect = math.tanh(real_growth_diff * 0.1) * 0.01
+        growth_effect = math.tanh(real_growth_diff * self.GROWTH_TANH_SCALE) * self.GROWTH_EFFECT_WEIGHT
         # growth_effect = math.tanh(real_growth_diff * 0.1) * 0.10
         # --- 5. 為替介入 (Intervention) ---
         # 介入比率に応じてレートを動かす
         # プラス（ドル買い・自国売り）なら、レート上昇（通貨安）要因
-        intervention_effect = math.tanh(intervention_ratio * 5.0) * 0.15
+        # 小さい介入比率でも体感できるように、線形成分に sqrt成分を加える。
+        intervention_linear = math.tanh(intervention_ratio * self.INTERVENTION_TANH_SCALE) * self.INTERVENTION_EFFECT_WEIGHT
+        intervention_root_signal = math.copysign(math.sqrt(abs(intervention_ratio)), intervention_ratio)
+        intervention_root = math.tanh(intervention_root_signal * self.INTERVENTION_ROOT_TANH_SCALE) * self.INTERVENTION_ROOT_EFFECT_WEIGHT
+        intervention_effect = intervention_linear + intervention_root
 
         # --- 6. 一人当たりGDP (GDP Per Capita) ---
         # 一人当たりGDPが高い国にやや有利（通貨高）になるように
@@ -78,24 +102,36 @@ class CurrencyRate:
         # 影響度は「やや」有利とのことなので、係数は小さめに設定
         # プラス（相手より豊か）なら通貨高（レート減）要因 -> マイナス
         # GDP差が2倍でも tanh(1.0) ~ 0.76 -> * 0.05 = 0.038 (約3.8%の変動圧力)
-        gdp_capita_effect = math.tanh(gdp_capita_ratio) * 0.05
+        gdp_capita_effect = math.tanh(gdp_capita_ratio) * self.GDP_CAPITA_EFFECT_WEIGHT
+
+        # --- 7. 初期レートへの緩やかな回帰（過度なドリフト抑制） ---
+        anchor_rate = self.past_rates[0] if self.past_rates else self.rate
+        safe_anchor = anchor_rate if anchor_rate > 0 else 1.0
+        anchor_diff = (self.past_rates[-1] - safe_anchor) / safe_anchor
+        anchor_effect = -math.tanh(anchor_diff * self.ANCHOR_TANH_SCALE) * self.ANCHOR_EFFECT_WEIGHT
 
         # --- 総合的な変動率 ---
         # inflation_diff, intervention_effect はプラスなら通貨安(レート増)要因
         # interest/trade/growth/gdp_capita effectはプラスなら通貨高(レート減)要因なのでマイナスをつける
-        total_change = inflation_diff - (interest_effect + trade_effect + growth_effect + gdp_capita_effect) + intervention_effect
+        total_change = inflation_diff - (interest_effect + trade_effect + growth_effect + gdp_capita_effect) + intervention_effect + anchor_effect
         
         # ランダムな投機的変動
-        random_noise = random.randint(-1, 1) * 0.005
+        random_noise = random.randint(-1, 1) * self.RANDOM_NOISE_STEP
         
-        # --- 7. 安全装置（変動幅キャップ） ---
-        # 1ターンでの変動を最大 ±25% に制限する (暴走防止)
-        if total_change > 0.25: total_change = 0.25
-        if total_change < -0.25: total_change = -0.25
+        # --- 8. 安全装置（変動幅キャップ） ---
+        # 1ターンでの変動を最大 ±3% に制限する (初期急変の抑制)
+        if total_change > self.MAX_TURN_CHANGE:
+            total_change = self.MAX_TURN_CHANGE
+        if total_change < -self.MAX_TURN_CHANGE:
+            total_change = -self.MAX_TURN_CHANGE
 
         # レートの更新
         prev_rate = self.past_rates[-1]
-        self.rate = prev_rate * (1 + total_change + random_noise)
+        raw_rate = prev_rate * (1 + total_change + random_noise)
+        elapsed_turns = max(0, len(self.past_rates) - 1)
+        blend_progress = min(1.0, float(elapsed_turns) / float(max(1, self.ANCHOR_BLEND_WARMUP_TURNS)))
+        anchor_blend = self.ANCHOR_BLEND_BASE + ((1.0 - blend_progress) * self.ANCHOR_BLEND_WARMUP_EXTRA)
+        self.rate = (raw_rate * (1.0 - anchor_blend)) + (safe_anchor * anchor_blend)
 
         if DEBUG_LOGS:
             print(f"--- {self.currency} ---")
@@ -104,6 +140,8 @@ class CurrencyRate:
             print(f"  Real Growth Diff: {real_growth_diff:.2f}% -> Effect: {-growth_effect:.4f}")
             print(f"  GDP/Capita Diff Ratio: {gdp_capita_ratio:.2f} -> Effect: {-gdp_capita_effect:.4f}")
             print(f"  Intervention: {intervention_ratio:.2f}% -> Effect: {intervention_effect:.4f}")
+            print(f"  Anchor Diff: {anchor_diff:.4f} -> Effect: {anchor_effect:.4f}")
+            print(f"  Anchor Blend: {anchor_blend:.4f}")
             print(f"  Total Change: {total_change:.4f}")
             print(f"  New Rate: {self.rate:.2f}")
 

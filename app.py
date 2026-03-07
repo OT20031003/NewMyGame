@@ -19,6 +19,8 @@ world = None
 mp = {"exe":True} #ここはいじくらない
 # Currency Index の基準ターン設定
 CURRENCY_INDEX_BASE_TURN = 80
+TRADE_GDP_WARMUP_TURNS = 30
+TRADE_GDP_WARMUP_MIN_SCALE = 0.05
 advance_jobs = {}
 advance_jobs_lock = threading.Lock()
 advance_turn_lock = threading.Lock()
@@ -37,15 +39,15 @@ def default_countries():
         Country(name="USA", money_name="Dollar", turn_year=turn_year, population_p=6.3, salary_p=0.1*2.4, initial_price=0.1*100, selfoperation=True, industry_p=2100, military_p=2000),
         
         # フランス: ユーロ (1ドル=0.92ユーロ想定)。物価95, 給与0.95
-        Country(name="France", money_name="Euro", turn_year=turn_year, population_p=5.75, salary_p=0.1*2.1, initial_price=0.1*80, selfoperation=True, industry_p=5500, military_p=300),
+        Country(name="France", money_name="Euro", turn_year=turn_year, population_p=5.75, salary_p=0.1*2.1, initial_price=0.1*80, selfoperation=True, industry_p=3000, military_p=300),
         
-        Country(name="Itary", money_name="Euro", turn_year=turn_year, population_p=5.70, salary_p=0.1*1.5, initial_price=0.1*60, selfoperation=True, industry_p=5500, military_p=300),
+        Country(name="Itary", money_name="Euro", turn_year=turn_year, population_p=5.70, salary_p=0.1*1.5, initial_price=0.1*60, selfoperation=True, industry_p=2500, military_p=300),
         
         # ドイツ: 産業強め
-        Country(name="Germany", money_name="Euro", turn_year=turn_year, population_p=5.9, salary_p=0.1*2.6, initial_price=0.1*95, selfoperation=True, industry_p=6000, military_p=250),
+        Country(name="Germany", money_name="Euro", turn_year=turn_year, population_p=5.9, salary_p=0.1*2.6, initial_price=0.1*95, selfoperation=True, industry_p=3200, military_p=250),
         
         # スイス Swissfranc
-        Country(name="Switzerland", money_name="Swissfranc", turn_year=turn_year, population_p=4.9, salary_p=0.1*3.4, initial_price=0.1*140, selfoperation=True, industry_p=7500, military_p=250),
+        Country(name="Switzerland", money_name="Swissfranc", turn_year=turn_year, population_p=4.9, salary_p=0.1*3.4, initial_price=0.1*140, selfoperation=True, industry_p=3500, military_p=250),
         
         # 中国: 人口多, 物価安(1ドル=7.2元), 給与低めだが産業力最強クラス
         Country(name="China", money_name="Yuan", turn_year=turn_year, population_p=6.5, salary_p=0.1*1.0, initial_price=0.1*400, selfoperation=True, industry_p=1000, military_p=10),
@@ -54,7 +56,7 @@ def default_countries():
         Country(name="England", money_name="Pond", turn_year=turn_year, population_p=5.66, salary_p=0.1*2.0, initial_price=0.1*70, selfoperation=True, industry_p=3500, military_p=300),
         
         Country(name="Russia", money_name="Ruble", turn_year=turn_year, population_p=6.10, salary_p=0.1*75.0, initial_price=0.1*4200, selfoperation=True, industry_p=500, military_p=150),
-        Country(name="Spain", money_name="Euro", turn_year=turn_year, population_p=5.66, salary_p=0.1*1.5, initial_price=0.1*60, selfoperation=True, industry_p=2900, military_p=400),
+        Country(name="Spain", money_name="Euro", turn_year=turn_year, population_p=5.66, salary_p=0.1*1.5, initial_price=0.1*60, selfoperation=True, industry_p=1900, military_p=400),
         
         # タイ: 新興国モデル (1ドル=33バーツ), 産業成長中
         Country(name="Thailand", money_name="Baht", turn_year=turn_year, population_p=5.7, salary_p=0.1*5.0, initial_price=0.1*500, selfoperation=True, industry_p=500, military_p=10)
@@ -246,6 +248,10 @@ def _advance_turn_internal(form_data, progress_callback=None):
             for c in world.Country_list
         }
 
+        # 初期ターンはTrade/GDPの寄与を抑える（初期条件ノイズの過大反映を防止）
+        warmup_progress = min(1.0, max(0.0, float(world.turn) / float(max(1, TRADE_GDP_WARMUP_TURNS))))
+        trade_gdp_scale = TRADE_GDP_WARMUP_MIN_SCALE + ((1.0 - TRADE_GDP_WARMUP_MIN_SCALE) * warmup_progress)
+
         # --- 1. 基軸通貨(Dollar)の指標を計算 ---
         base_interest = 0.0
         base_inflation = 0.0
@@ -293,6 +299,8 @@ def _advance_turn_internal(form_data, progress_callback=None):
                 b_total_pop = sum(c.get_population() for c in b_countries)
                 if b_total_pop > 0:
                     base_gdp_per_capita_usd = b_total_gdp_usd / b_total_pop
+
+        effective_base_trade_balance_ratio = base_trade_balance_ratio * trade_gdp_scale
         
         if DEBUG_LOGS:
             print(f"#### Base(USD) - Inf: {base_inflation:.2f}%, Growth: {base_gdp_growth:.2f}%, Trade/GDP: {base_trade_balance_ratio:.2f}%, GDP/Cap: {base_gdp_per_capita_usd:.0f}")
@@ -344,14 +352,16 @@ def _advance_turn_internal(form_data, progress_callback=None):
                 if c_total_pop > 0:
                     avg_gdp_per_capita_usd = c_total_gdp_usd / c_total_pop
 
+            effective_area_trade_balance_ratio = area_trade_balance_ratio * trade_gdp_scale
+
             # 金利入力の確認と適用
             if money_name in interest_inputs:
                 # ユーザー入力がある場合
                 values = interest_inputs[money_name]
                 avg_input_interest = sum(values) / len(values)
                 money.change_interest(avg_input_interest, 
-                                      avg_inflation, area_trade_balance_ratio, avg_gdp_growth,
-                                      base_interest, base_inflation, base_trade_balance_ratio, base_gdp_growth,
+                                      avg_inflation, effective_area_trade_balance_ratio, avg_gdp_growth,
+                                      base_interest, base_inflation, effective_base_trade_balance_ratio, base_gdp_growth,
                                       intervention_ratio=intervention_ratio,
                                       avg_gdp_per_capita_usd=avg_gdp_per_capita_usd, 
                                       base_gdp_per_capita_usd=base_gdp_per_capita_usd 
@@ -374,8 +384,8 @@ def _advance_turn_internal(form_data, progress_callback=None):
                     )
                     
                     # 金利を更新
-                    money.stay_interest(avg_inflation, area_trade_balance_ratio, avg_gdp_growth,
-                                        base_interest, base_inflation, base_trade_balance_ratio, base_gdp_growth,
+                    money.stay_interest(avg_inflation, effective_area_trade_balance_ratio, avg_gdp_growth,
+                                        base_interest, base_inflation, effective_base_trade_balance_ratio, base_gdp_growth,
                                         new_interest=decided_interest,
                                         intervention_ratio=intervention_ratio,
                                         avg_gdp_per_capita_usd=avg_gdp_per_capita_usd, 
@@ -383,8 +393,8 @@ def _advance_turn_internal(form_data, progress_callback=None):
                                         )
                 else:
                     # 自律操作でない（かつユーザー入力もない）場合は現状維持
-                    money.stay_interest(avg_inflation, area_trade_balance_ratio, avg_gdp_growth,
-                                        base_interest, base_inflation, base_trade_balance_ratio, base_gdp_growth,
+                    money.stay_interest(avg_inflation, effective_area_trade_balance_ratio, avg_gdp_growth,
+                                        base_interest, base_inflation, effective_base_trade_balance_ratio, base_gdp_growth,
                                         intervention_ratio=intervention_ratio,
                                         avg_gdp_per_capita_usd=avg_gdp_per_capita_usd, 
                                         base_gdp_per_capita_usd=base_gdp_per_capita_usd 
