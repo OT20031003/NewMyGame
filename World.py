@@ -32,8 +32,9 @@ class World:
     REINFORCE_GDP_RATIO = 0.10
     AI_REINFORCE_ATTEMPT_CHANCE = 0.30
     AI_CAPITAL_REINFORCE_WEIGHT = 1.45
-    BASE_AUTO_INTERVENTION_INTERVAL = 5
+    BASE_AUTO_INTERVENTION_INTERVAL = 20
     BASE_AUTO_INTERVENTION_EPSILON = 0.5
+    BASE_AUTO_INTERVENTION_IMBALANCE_RATIO = 0.35
     TERRITORY_EVENT_LOG_LIMIT = 600
 
     # ★修正: index_base_turn 引数を追加 (デフォルト50)
@@ -51,6 +52,16 @@ class World:
             interval = self.BASE_AUTO_INTERVENTION_INTERVAL
         self.base_auto_intervention_interval = max(1, interval)
         self.base_auto_intervention_epsilon = self.BASE_AUTO_INTERVENTION_EPSILON
+        env_imbalance_ratio = os.getenv("MYGAME_BASE_AUTO_INTERVENTION_IMBALANCE_RATIO")
+        try:
+            imbalance_ratio = (
+                float(env_imbalance_ratio)
+                if env_imbalance_ratio is not None
+                else self.BASE_AUTO_INTERVENTION_IMBALANCE_RATIO
+            )
+        except (TypeError, ValueError):
+            imbalance_ratio = self.BASE_AUTO_INTERVENTION_IMBALANCE_RATIO
+        self.base_auto_intervention_imbalance_ratio = max(0.0, min(1.0, imbalance_ratio))
 
     def _normalize_territory_event_logs(self, raw_logs):
         normalized = []
@@ -130,46 +141,57 @@ class World:
 
     def _auto_intervene_base_currency_domestic(self):
         """
-        基軸通貨国のみ、一定ターンごとに Domestic を 0 に寄せる自動介入を実行する。
-        O(国数) で軽量に処理するため、該当ターン以外は即returnする。
+        一定ターンごとに FX(USD) と Domestic(USD換算) の偏りを検出し、
+        差分比率が閾値を超えた国のみ介入で 50:50 に近づける。
+        自動調整分は為替計算へ中立化するため fx_neutral_intervention_usd 側に記録する。
         """
         if self.turn <= 0:
             return
         if self.turn % self.base_auto_intervention_interval != 0:
             return
 
-        base_money = self.get_base_currency()
-        if base_money is None:
-            return
-        current_rate = base_money.get_rate()
-        if current_rate <= 0:
-            return
-
         eps = self.base_auto_intervention_epsilon
-        safe_rate = current_rate + 0.00001
+        imbalance_threshold = self.base_auto_intervention_imbalance_ratio
         for country in self.Country_list:
-            if country.money_name != base_money.name:
+            money = self._money_by_name(country.money_name)
+            if money is None:
                 continue
 
-            domestic = country.domestic_money
-            if abs(domestic) <= eps:
-                country.domestic_money = 0.0
+            current_rate = money.get_rate()
+            if current_rate <= 0:
                 continue
 
-            if domestic > 0:
-                # Domestic余剰は USD買いで吸収
-                amount_usd = domestic / safe_rate
-            else:
-                # Domestic不足は USD売りで補填（USD不足時は可能な範囲のみ）
-                required_usd = (-domestic) / safe_rate
-                amount_usd = -min(country.usd, required_usd)
-                if amount_usd == 0:
+            domestic_usd = country.domestic_money / current_rate
+            total_abs = abs(country.usd) + abs(domestic_usd)
+            if total_abs <= eps:
+                if abs(country.domestic_money) <= eps:
+                    country.domestic_money = 0.0
+                continue
+
+            imbalance_ratio = abs(country.usd - domestic_usd) / (total_abs + 0.00001)
+            if imbalance_ratio < imbalance_threshold:
+                continue
+
+            # 介入で usd と domestic_usd を同値(50:50)に寄せる
+            target_usd = (country.usd + domestic_usd) / 2.0
+            amount_usd = target_usd - country.usd
+            if abs(amount_usd) <= eps / (current_rate + 0.00001):
+                continue
+
+            if amount_usd < 0:
+                sell_capacity = max(0.0, country.usd)
+                if sell_capacity <= 0.0:
+                    continue
+                amount_usd = max(amount_usd, -sell_capacity)
+                if amount_usd == 0.0:
                     continue
 
-            # 自動介入は為替計算へ影響させないため、manual介入カウンタは使わず直接残高反映する
-            country.usd += amount_usd
-            country.domestic_money -= amount_usd * current_rate
-            country.fx_neutral_intervention_usd += amount_usd
+            before_turn_intervention = country.turn_intervention_usd
+            country.intervene(amount_usd, current_rate, self.turn)
+            executed_amount = country.turn_intervention_usd - before_turn_intervention
+            if executed_amount != 0.0:
+                country.turn_intervention_usd -= executed_amount
+                country.fx_neutral_intervention_usd += executed_amount
             if abs(country.domestic_money) <= eps:
                 country.domestic_money = 0.0
 

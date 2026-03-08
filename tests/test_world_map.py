@@ -126,26 +126,56 @@ class WorldMapTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("海", message)
 
-    def test_auto_intervention_base_currency_zeros_domestic_on_interval(self):
+    def test_auto_intervention_rebalances_reserves_when_imbalanced(self):
         world = self._build_world()
-        alpha = world._country_by_name("Alpha")  # 基軸通貨(Dollar)
-        beta = world._country_by_name("Beta")    # 非基軸通貨(Yen)
+        alpha = world._country_by_name("Alpha")
 
         world.base_auto_intervention_interval = 5
+        world.base_auto_intervention_imbalance_ratio = 0.20
         world.turn = 5
         alpha.domestic_money = 2500.0
         alpha.usd = 1000.0
-        beta.domestic_money = 2500.0
-        beta.usd = 1000.0
-        before_alpha_usd = alpha.usd
 
         world._auto_intervene_base_currency_domestic()
 
-        self.assertEqual(alpha.domestic_money, 0.0)
-        self.assertGreater(alpha.usd, before_alpha_usd)
+        self.assertAlmostEqual(alpha.usd, 1750.0, places=6)
+        self.assertAlmostEqual(alpha.domestic_money, 1750.0, places=6)
         self.assertEqual(alpha.turn_intervention_usd, 0.0)
-        self.assertGreater(alpha.fx_neutral_intervention_usd, 0.0)
-        self.assertEqual(beta.domestic_money, 2500.0)
+        self.assertAlmostEqual(alpha.fx_neutral_intervention_usd, 750.0, places=6)
+
+    def test_auto_intervention_rebalances_non_base_currency_by_usd_equivalent(self):
+        world = self._build_world()
+        beta = world._country_by_name("Beta")
+        yen = world._money_by_name("Yen")
+
+        world.base_auto_intervention_interval = 5
+        world.base_auto_intervention_imbalance_ratio = 0.20
+        world.turn = 5
+        beta.domestic_money = 2500.0
+        beta.usd = 1000.0
+
+        world._auto_intervene_base_currency_domestic()
+
+        self.assertIsNotNone(yen)
+        beta_domestic_usd = beta.domestic_money / yen.get_rate()
+        self.assertAlmostEqual(beta.usd, beta_domestic_usd, places=6)
+        self.assertEqual(beta.turn_intervention_usd, 0.0)
+        self.assertNotEqual(beta.fx_neutral_intervention_usd, 0.0)
+
+    def test_auto_intervention_skips_when_gap_below_threshold(self):
+        world = self._build_world()
+        alpha = world._country_by_name("Alpha")
+
+        world.base_auto_intervention_interval = 5
+        world.base_auto_intervention_imbalance_ratio = 0.20
+        world.turn = 5
+        alpha.domestic_money = 1100.0
+        alpha.usd = 1000.0
+
+        world._auto_intervene_base_currency_domestic()
+
+        self.assertEqual(alpha.domestic_money, 1100.0)
+        self.assertEqual(alpha.usd, 1000.0)
 
     def test_auto_intervention_base_currency_skips_non_interval_turn(self):
         world = self._build_world()

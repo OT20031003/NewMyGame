@@ -15,6 +15,7 @@ class CurrencyRate:
     INTERVENTION_EFFECT_WEIGHT = 0.20
     INTERVENTION_ROOT_TANH_SCALE = 1.2
     INTERVENTION_ROOT_EFFECT_WEIGHT = 0.05
+    INTERVENTION_IMPACT_MULTIPLIER = 3.0
     GDP_CAPITA_EFFECT_WEIGHT = 0.012
     ANCHOR_TANH_SCALE = 2.0
     ANCHOR_EFFECT_WEIGHT = 0.030
@@ -90,7 +91,7 @@ class CurrencyRate:
         intervention_linear = math.tanh(intervention_ratio * self.INTERVENTION_TANH_SCALE) * self.INTERVENTION_EFFECT_WEIGHT
         intervention_root_signal = math.copysign(math.sqrt(abs(intervention_ratio)), intervention_ratio)
         intervention_root = math.tanh(intervention_root_signal * self.INTERVENTION_ROOT_TANH_SCALE) * self.INTERVENTION_ROOT_EFFECT_WEIGHT
-        intervention_effect = intervention_linear + intervention_root
+        intervention_effect = (intervention_linear + intervention_root) * self.INTERVENTION_IMPACT_MULTIPLIER
 
         # --- 6. 一人当たりGDP (GDP Per Capita) ---
         # 一人当たりGDPが高い国にやや有利（通貨高）になるように
